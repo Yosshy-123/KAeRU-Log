@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Safe Chat</title>
+<style>
+body { font-family:sans-serif; background:#0f1221; color:#e8ebff; margin:0; }
+#messages { height:70vh; overflow:auto; padding:10px; border:1px solid #333; margin-bottom:10px; }
+textarea { width:100%; height:50px; margin-bottom:5px; }
+button { padding:6px 12px; }
+</style>
+</head>
+<body>
+<h1>Safe Chat</h1>
+<div>オンライン: <span id="userCount">-</span></div>
+<div id="messages"></div>
+<textarea id="messageInput" placeholder="メッセージ"></textarea>
+<button id="sendBtn">送信</button>
+
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+(async()=>{
+  const socket = io();
+  // シード値管理
+  let seed = localStorage.getItem('chat_seed');
+  if(!seed){
+    const res = await fetch('/api/register',{method:'POST'}).then(r=>r.json());
+    seed = res.seed;
+    localStorage.setItem('chat_seed', seed);
+  }
+
+  // ユーザー名管理
+  let username = localStorage.getItem('chat_username') || '';
+  if(!username){
+    username = prompt('ユーザー名を入力 (1〜24文字)');
+    username = username.slice(0,24);
+    await fetch('/api/username',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({seed,username})
+    });
+    localStorage.setItem('chat_username', username);
+  }
+
+  const el = {
+    messages: document.getElementById('messages'),
+    input: document.getElementById('messageInput'),
+    send: document.getElementById('sendBtn'),
+    userCount: document.getElementById('userCount')
+  };
+
+  // メッセージ取得・描画
+  async function fetchMessages(){
+    const msgs = await fetch('/api/messages').then(r=>r.json());
+    el.messages.innerHTML = '';
+    msgs.forEach(m=>{
+      const div = document.createElement('div');
+      div.textContent = `[${m.time}] ${m.username}: ${m.message}`;
+      el.messages.appendChild(div);
+    });
+    el.messages.scrollTop = el.messages.scrollHeight;
+  }
+
+  socket.on('newMessage', m=>{
+    const div = document.createElement('div');
+    div.textContent = `[${m.time}] ${m.username}: ${m.message}`;
+    el.messages.appendChild(div);
+    el.messages.scrollTop = el.messages.scrollHeight;
+  });
+
+  socket.on('updateReaction', ()=>{ fetchMessages(); });
+  socket.on('clearMessages', ()=>{ el.messages.innerHTML=''; });
+  socket.on('userCount', n=>{ el.userCount.textContent=n; });
+
+  fetchMessages();
+
+  el.send.addEventListener('click', async ()=>{
+    const msg = el.input.value.trim();
+    if(!msg) return;
+    const time = new Date().toLocaleString();
+    await fetch('/api/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({seed,message:msg,time})
+    });
+    el.input.value='';
+  });
+})();
+</script>
+</body>
+</html>
