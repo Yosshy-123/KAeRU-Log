@@ -2,23 +2,37 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Chat App</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="chat-container">
-    <div class="header">
-        <h2>Chat App</h2>
-        <button id="deleteAllBtn">全削除</button>
-    </div>
-    <div id="messages" class="messages"></div>
-    <form id="chatForm">
-        <input type="text" id="messageInput" placeholder="メッセージを入力">
-        <button type="submit">送信</button>
-    </form>
+<div class="app">
+	<header class="appbar">
+		<div class="brand">
+			<div class="logo"></div>
+			<div class="title">Chat App</div>
+		</div>
+		<div class="toolbar">
+			<button class="btn danger" id="clearAllBtn">全削除</button>
+		</div>
+	</header>
+	<main>
+		<div class="messages" id="messages"></div>
+	</main>
+	<footer class="composer">
+		<div class="row">
+			<div class="input">
+				<textarea id="messageInput" placeholder="メッセージを入力..."></textarea>
+			</div>
+			<div class="send">
+				<button class="btn accent" id="sendBtn">送信</button>
+			</div>
+		</div>
+	</footer>
 </div>
-<div id="toast" class="toast"></div>
+<div class="toast" id="toast"></div>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
 <script src="client.js"></script>
 </body>
 </html>
