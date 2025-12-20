@@ -1,38 +1,61 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const bodyParser = require('body-parser');
-const { randomUUID } = require('crypto');
+const crypto = require('crypto');
 
 const app = express();
+app.set('trust proxy', true);
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
 app.use(express.static('public'));
-app.use(bodyParser.json());
+app.use(express.json());
 
-const ADMIN_PASS = 'admin123';
+const ADMIN_PASS = 'adminkey1234';
+const SECRET_KEY = 'supersecretkey1234';
 let messages = [];
 const lastMessageTime = new Map();
 const lastClearTime = new Map();
 
+function generateToken(clientId) {
+  const hmac = crypto.createHmac('sha256', SECRET_KEY);
+  hmac.update(clientId);
+  const signature = hmac.digest('hex');
+  return `${clientId}.${signature}`;
+}
+
+function verifyToken(token) {
+  if (!token) return null;
+  const parts = token.split('.');
+  if (parts.length !== 2) return null;
+  const [clientId, signature] = parts;
+  const hmac = crypto.createHmac('sha256', SECRET_KEY);
+  hmac.update(clientId);
+  const expected = hmac.digest('hex');
+  return expected === signature ? clientId : null;
+}
+
 app.get('/api/messages', (req, res) => res.json(messages));
 
 app.post('/api/messages', (req, res) => {
-  const { username, message, clientId } = req.body;
-  if (!username || !message || !clientId) return res.status(400).json({ error: 'Invalid data' });
+  const { username, message, token } = req.body;
+  if (!username || !message || !token) return res.status(400).json({ error: 'Invalid data' });
   if (typeof username !== 'string' || username.length === 0 || username.length > 24)
     return res.status(400).json({ error: 'Username length invalid' });
   if (typeof message !== 'string' || message.length === 0 || message.length > 800)
     return res.status(400).json({ error: 'Message length invalid' });
+
+  const clientId = verifyToken(token);
+  if (!clientId) return res.status(403).json({ error: 'Invalid token' });
 
   const now = Date.now();
   const lastTime = lastMessageTime.get(clientId) || 0;
   if (now - lastTime < 1000) return res.status(429).json({ error: '送信には1秒以上間隔をあけてください' });
   lastMessageTime.set(clientId, now);
 
-  const msg = { username, message, time: new Date().toLocaleString(), clientId };
+  const msg = { username, message, time: new Date().toISOString(), clientId };
   messages.push(msg);
+  if (messages.length > 100) messages.shift();
   io.emit('newMessage', msg);
   res.json({ ok: true });
 });
@@ -53,8 +76,9 @@ app.post('/api/clear', (req, res) => {
 });
 
 io.on('connection', socket => {
-  const clientId = randomUUID();
-  socket.emit('assignId', clientId);
+  const clientId = crypto.randomUUID();
+  const token = generateToken(clientId);
+  socket.emit('assignToken', token);
   io.emit('userCount', io.engine.clientsCount);
   socket.on('disconnect', () => io.emit('userCount', io.engine.clientsCount));
 });
