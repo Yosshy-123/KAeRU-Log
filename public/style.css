@@ -210,7 +210,6 @@ textarea {
 	opacity: 0.85;
 }
 
-/* ===== レスポンシブ対応 ===== */
 @media (max-width:600px) {
 	header {
 		flex-direction: column;
@@ -256,4 +255,25 @@ textarea {
 		width: 95%;
 		padding: 16px;
 	}
+}
+
+.new-msg-btn {
+	position: fixed;
+	left: 50%;
+	transform: translateX(-50%);
+	bottom: 80px;
+	z-index: 40;
+	padding: 8px 14px;
+	border-radius: 999px;
+	background: linear-gradient(180deg, var(--accent), var(--accent-2));
+	color: #fff;
+	border: none;
+	box-shadow: var(--shadow);
+	cursor: pointer;
+	display: none;
+	font-weight: 700;
+}
+
+.new-msg-btn.show {
+	display: inline-flex;
 }
