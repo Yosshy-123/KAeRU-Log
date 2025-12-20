@@ -22,6 +22,7 @@ const el = {
 	clearBtn: document.getElementById('clearBtn'),
 	newMsgIndicator: document.getElementById('newMsgIndicator'),
 	connText: document.getElementById('connText'),
+	connDot: document.getElementById('connDot'),
 	userCount: document.getElementById('userCount')
 };
 
@@ -245,9 +246,17 @@ if (el.input) {
 
 socket.on('connect', () => {
 	if (el.connText) el.connText.textContent = 'オンライン';
+	if (el.connDot) {
+		el.connDot.classList.remove('offline');
+		el.connDot.classList.add('online');
+	}
 });
 socket.on('disconnect', () => {
 	if (el.connText) el.connText.textContent = '切断';
+	if (el.connDot) {
+		el.connDot.classList.remove('online');
+		el.connDot.classList.add('offline');
+	}
 });
 socket.on('assignToken', token => {
 	myToken = token;
