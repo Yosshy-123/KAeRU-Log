@@ -1,55 +1,72 @@
-const express = require('express');
+import express from 'express';
+import http from 'http';
+import { Server } from 'socket.io';
+import bodyParser from 'body-parser';
+
 const app = express();
-const http = require('http').createServer(app);
-const io = require('socket.io')(http);
-const bodyParser = require('body-parser');
-const cors = require('cors');
+const server = http.createServer(app);
+const io = new Server(server);
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin1234";
-let messages = [];
-
-app.use(cors());
-app.use(bodyParser.json());
 app.use(express.static('public'));
+app.use(bodyParser.json());
 
-app.post('/api/register',(req,res)=>{
-  const seed = [...Array(16)].map(()=>Math.floor(Math.random()*256).toString(16).padStart(2,'0')).join('');
-  res.json({seed});
+const messages = [];
+const MAX_MESSAGE_LEN = 800;
+const MAX_USERNAME_LEN = 24;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+
+function isValidMessage(msg) {
+  return msg && typeof msg === 'string' && msg.trim().length > 0 && msg.length <= MAX_MESSAGE_LEN;
+}
+
+function isValidUsername(name) {
+  return name && typeof name === 'string' && name.trim().length > 0 && name.length <= MAX_USERNAME_LEN;
+}
+
+app.post('/api/messages', (req, res) => {
+  const { username, message } = req.body;
+  if (!isValidUsername(username)) return res.status(400).json({ error: `ユーザー名は1〜${MAX_USERNAME_LEN}文字で入力してください` });
+  if (!isValidMessage(message)) return res.status(400).json({ error: `メッセージは1〜${MAX_MESSAGE_LEN}文字で入力してください` });
+
+  const msgObj = {
+    id: messages.length,
+    username: username.trim(),
+    message: message.trim(),
+    time: new Date().toISOString(),
+    reactions: {}
+  };
+
+  messages.push(msgObj);
+  io.emit('newMessage', msgObj);
+  res.json({ success: true, message: msgObj });
 });
 
-app.post('/api/username',(req,res)=>{
-  res.json({ok:true});
-});
-
-app.get('/api/messages',(req,res)=>{
+app.get('/api/messages', (req, res) => {
   res.json(messages);
 });
 
-app.post('/api/messages',(req,res)=>{
-  const { seed, message, time, username } = req.body;
-  if(!seed || !message || !username) return res.status(400).json({ message:'Invalid' });
-  messages.push({ seed, message, time, username });
-  io.emit('newMessage',{ seed, message, time, username });
-  res.json({ok:true});
-});
-
-app.post('/api/pass',(req,res)=>{
-  const { password, messageId } = req.body;
-  if(password !== ADMIN_PASSWORD) return res.status(403).json({ message:'パスワード違い' });
-  if(typeof messageId==='number' && messages[messageId]){
-    messages.splice(messageId,1);
-    io.emit('clearMessages');
-    return res.json({message:'メッセージ削除しました'});
-  }
-  messages = [];
+app.post('/api/clear', (req, res) => {
+  const { password } = req.body;
+  if (password !== ADMIN_PASSWORD) return res.status(403).json({ error: '管理者パスワードが間違っています' });
+  messages.length = 0;
   io.emit('clearMessages');
-  res.json({message:'全メッセージ削除しました'});
+  res.json({ success: true, message: '全メッセージを削除しました' });
 });
 
-io.on('connection', socket=>{
-  socket.emit('userCount', io.engine.clientsCount);
-  io.emit('userCount', io.engine.clientsCount);
-  socket.on('disconnect', ()=>{ io.emit('userCount', io.engine.clientsCount); });
+io.on('connection', socket => {
+  io.emit('userCount', { userCount: io.engine.clientsCount });
+
+  socket.on('updateReaction', ({ messageId, reaction }) => {
+    const msg = messages.find(m => m.id === messageId);
+    if (!msg) return;
+    msg.reactions[reaction] = (msg.reactions[reaction] || 0) + 1;
+    io.emit('updateReaction', { messageId, reactions: msg.reactions });
+  });
+
+  socket.on('disconnect', () => {
+    io.emit('userCount', { userCount: io.engine.clientsCount });
+  });
 });
 
-http.listen(process.env.PORT||3000);
+const PORT = process.env.PORT || 3000;
+server.listen(PORT);
