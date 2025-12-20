@@ -150,6 +150,9 @@ main {
 	justify-content: center;
 	color: #b9c3ff;
 	font-weight: 700;
+	flex-shrink: 0;
+	text-align: center;
+	line-height: 1;
 }
 
 .bubble {
