@@ -1,38 +1,59 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Chat App</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Chat</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div class="app">
-	<header class="appbar">
-		<div class="brand">
-			<div class="logo"></div>
-			<div class="title">Chat App</div>
-		</div>
-		<div class="toolbar">
-			<button class="btn danger" id="clearAllBtn">全削除</button>
-		</div>
-	</header>
-	<main>
-		<div class="messages" id="messages"></div>
-	</main>
-	<footer class="composer">
-		<div class="row">
-			<div class="input">
-				<textarea id="messageInput" placeholder="メッセージを入力..."></textarea>
-			</div>
-			<div class="send">
-				<button class="btn accent" id="sendBtn">送信</button>
-			</div>
-		</div>
-	</footer>
+
+<header>
+  <div class="title">Chat</div>
+  <div>オンライン: <span id="userCount">-</span></div>
+  <button id="openAdminBtn" class="admin-btn">管理</button>
+</header>
+
+<main>
+  <div id="messages" class="messages"></div>
+</main>
+
+<footer>
+  <textarea id="messageInput" placeholder="メッセージを入力"></textarea>
+  <button id="sendBtn">送信</button>
+  <button id="editUserBtn">ユーザー名設定</button>
+</footer>
+
+<div id="userModal" class="modal-backdrop">
+  <div class="modal">
+    <h3>ユーザー名設定</h3>
+    <div class="field">
+      <label for="usernameInput">ユーザー名</label>
+      <input id="usernameInput" type="text" maxlength="24">
+    </div>
+    <div class="actions">
+      <button id="saveUsernameBtn">保存</button>
+      <button id="closeUserModalBtn">閉じる</button>
+    </div>
+  </div>
 </div>
-<div class="toast" id="toast"></div>
-<script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
+
+<div id="adminModal" class="modal-backdrop">
+  <div class="modal">
+    <h3>管理者操作</h3>
+    <div class="field">
+      <label for="adminPassword">管理者パスワード</label>
+      <input id="adminPassword" type="password">
+    </div>
+    <div class="actions">
+      <button id="clearAllBtn">全削除</button>
+      <button id="closeAdminModalBtn">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script src="client.js"></script>
+
 </body>
 </html>
