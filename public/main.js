@@ -3,6 +3,22 @@ const socket = io(SERVER_URL);
 let messages = [];
 let myToken = localStorage.getItem('chatToken') || '';
 let myName = localStorage.getItem('chat_username') || '';
+let mySeed = localStorage.getItem('chat_seed');
+if (!mySeed) {
+	mySeed = generateSeed(40);
+	localStorage.setItem('chat_seed', mySeed);
+}
+
+function generateSeed(length) {
+	const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+	let result = '';
+	const array = new Uint32Array(length);
+	crypto.getRandomValues(array);
+	for (let i = 0; i < length; i++) {
+		result += chars[array[i] % chars.length];
+	}
+	return result;
+}
 
 const el = {
 	container: document.querySelector('main'),
@@ -74,10 +90,10 @@ function focusInput(elm = el.input) {
 		elm.value = val;
 	}
 }
-
 function renderMessage(msg) {
+	const isSelf = msg.seed === mySeed;
 	const wrap = document.createElement('div');
-	wrap.className = 'msg' + ((msg.clientId === myToken) ? ' self' : '');
+	wrap.className = 'msg' + (isSelf ? ' self' : '');
 	const avatar = document.createElement('div');
 	avatar.className = 'avatar';
 	avatar.textContent = initials(msg.username);
@@ -136,7 +152,8 @@ async function sendMessage() {
 		const payload = {
 			username: myName,
 			message: txt,
-			token: myToken
+			token: myToken,
+			seed: mySeed
 		};
 		const res = await fetch(`${SERVER_URL}/api/messages`, {
 			method: 'POST',
