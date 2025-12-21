@@ -153,7 +153,7 @@ async function sendMessage() {
 			username: myName,
 			message: txt,
 			token: myToken,
-			seed: mySeed
+			seed: mySeed 
 		};
 		const res = await fetch(`${SERVER_URL}/api/messages`, {
 			method: 'POST',
