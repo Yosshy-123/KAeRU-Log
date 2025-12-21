@@ -10,6 +10,7 @@ try {
     console.warn('dotenv not found, using default values');
 }
 
+// 必ず.envファイルにREDIS_URLを定義する
 if (!process.env.REDIS_URL) {
     console.error('REDIS_URL is not set');
     process.exit(1);
