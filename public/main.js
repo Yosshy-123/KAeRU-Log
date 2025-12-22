@@ -199,6 +199,7 @@ async function clearAllMessages() {
 		showToast('パスワードを入力してください');
 		return;
 	}
+
 	try {
 		const res = await fetch(`${SERVER_URL}/api/clear`, {
 			method: 'POST',
@@ -209,12 +210,14 @@ async function clearAllMessages() {
 				password: p
 			})
 		});
-		const j = await res.json().catch(() => ({}));
+
 		const data = await res.json().catch(() => ({}));
+
 		if (!res.ok) {
 			showToast(data.error || '削除に失敗しました');
 			return;
 		}
+
 		closeAdminModal();
 		focusInput();
 		await fetchMessages();
