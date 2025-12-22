@@ -36,6 +36,10 @@ const ADMIN_PASS = process.env.ADMIN_PASS || 'adminkey1234';
 const SECRET_KEY = process.env.SECRET_KEY || 'supersecretkey1234';
 const PORT = process.env.PORT || 3000;
 
+function notify(ioOrSocket, message, type = 'info') {
+	ioOrSocket.emit('notify', { message, type });
+}
+
 function formatTime(date) {
     // UTCベースで9時間足してJSTに変換
     const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
@@ -165,6 +169,7 @@ app.post('/api/clear', async (req, res) => {
     try {
         await redis.del('messages');
         io.emit('clearMessages');
+		notify(io, '全メッセージ削除されました', 'warning');
         res.json({ message: '全メッセージ削除しました' });
     } catch (e) {
         console.error('Redis clear failed', e);
