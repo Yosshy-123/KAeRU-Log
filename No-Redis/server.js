@@ -179,7 +179,6 @@ io.on('connection', socket => {
         const verifiedId = verifyToken(token);
         if (!verifiedId || tokens.get(verifiedId) !== token) {
             socket.emit('authFailed', { error: 'Invalid or expired token' });
-            socket.emit('notify', 'トークンが無効です。再認証してください');
             return;
         }
 
