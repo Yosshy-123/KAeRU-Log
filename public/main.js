@@ -206,7 +206,7 @@ async function clearAllMessages() {
 		});
 		const j = await res.json().catch(() => ({}));
 		if (!res.ok) throw j;
-		showToast(j.message || '全てのメッセージを削除しました');
+		showToast(j.message || '全メッセージ削除しました');
 		closeAdminModal();
 		focusInput();
 		await fetchMessages();
