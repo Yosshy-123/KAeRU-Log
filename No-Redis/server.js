@@ -26,7 +26,7 @@ const ADMIN_PASS = process.env.ADMIN_PASS || 'adminkey1234';
 const SECRET_KEY = process.env.SECRET_KEY || 'supersecretkey1234';
 const PORT = process.env.PORT || 3000;
 
-let messages = [];
+const messagesByRoom = {};
 const lastMessageTime = new Map();
 const lastClearTime = new Map();
 const tokens = new Map();
@@ -97,7 +97,14 @@ function verifyToken(token) {
     return expected === signature ? clientId : null;
 }
 
-app.get('/api/messages', (req, res) => {
+app.get('/api/messages/:roomId', (req, res) => {
+    const roomId = req.params.roomId;
+
+    if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) {
+        return res.status(400).json({ error: 'invalid roomId' });
+    }
+
+    const messages = messagesByRoom[roomId] || [];
     res.json(
         messages.map(m => ({
             username: m.username,
@@ -109,7 +116,11 @@ app.get('/api/messages', (req, res) => {
 });
 
 app.post('/api/messages', (req, res) => {
-    const { username, message, token, seed } = req.body;
+    const { username, message, token, seed, roomId } = req.body;
+    if (!roomId)
+        return res.status(400).json({ error: 'roomId required' });
+    if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId))
+        return res.status(400).json({ error: 'invalid roomId' });
     if (!username || !message || !token || !seed)
         return res.status(400).json({ error: 'Invalid data' });
     if (typeof username !== 'string' || username.length === 0 || username.length > 24)
@@ -132,8 +143,12 @@ app.post('/api/messages', (req, res) => {
         clientId,
         seed 
     };
-    messages.push(storedMsg);
-    if (messages.length > 100) messages.shift();
+    if (!messagesByRoom[roomId]) {
+        messagesByRoom[roomId] = [];
+    }
+
+    messagesByRoom[roomId].push(storedMsg);
+    messagesByRoom[roomId] = messagesByRoom[roomId].slice(-100);
 
     const publicMsg = {
         username: storedMsg.username,
@@ -142,33 +157,37 @@ app.post('/api/messages', (req, res) => {
         seed: storedMsg.seed
     };
 
-    io.emit('newMessage', publicMsg);
+    io.to(roomId).emit('newMessage', publicMsg);
     res.json({ ok: true });
 });
 
 app.post('/api/clear', (req, res) => {
-    const { password } = req.body;
+	const { password, roomId } = req.body;
     const ip = req.ip;
     if (password !== ADMIN_PASS) return res.status(403).json({ error: 'Unauthorized' });
-
+    if (!roomId)
+        return res.status(400).json({ error: 'roomId required' });
+    if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId))
+        return res.status(400).json({ error: 'invalid roomId' });
     const now = Date.now();
-    const lastTime = lastClearTime.get(ip) || 0;
+    const key = `${ip}:${roomId}`;
+    const lastTime = lastClearTime.get(key) || 0;
     if (now - lastTime < 30000) return res.status(429).json({ error: '削除には30秒以上間隔をあけてください' });
-    lastClearTime.set(ip, now);
+    lastClearTime.set(key, now);
 
-    messages = [];
-    io.emit('clearMessages');
+    delete messagesByRoom[roomId];
+    io.to(roomId).emit('clearMessages');
     res.json({ message: '全メッセージ削除しました' });
 });
 
 io.on('connection', socket => {
-	resetTokensIfMonthChanged();
+    resetTokensIfMonthChanged();
+
     const clientId = crypto.randomUUID();
     const token = generateToken(clientId);
     tokens.set(clientId, token);
 
     socket.emit('assignToken', token);
-    io.emit('userCount', io.engine.clientsCount);
 
     socket.on('authenticate', ({ token }) => {
         const verifiedId = verifyToken(token);
@@ -179,9 +198,42 @@ io.on('connection', socket => {
 
         socket.data = socket.data || {};
         socket.data.clientId = verifiedId;
+		socket.data.authenticated = true;
+        socket.emit('authenticated');
     });
 
-    socket.on('disconnect', () => io.emit('userCount', io.engine.clientsCount));
+    socket.on('joinRoom', ({ roomId }) => {
+		socket.data = socket.data || {};
+        if (!socket.data.clientId || !socket.data.authenticated) {
+            socket.emit('authRequired');
+            return;
+        }
+
+        if (!roomId) return;
+        if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return;
+
+        if (socket.data.roomId) {
+            socket.leave(socket.data.roomId);
+        }
+
+        socket.join(roomId);
+        socket.data.roomId = roomId;
+
+        const roomSize =
+            io.sockets.adapter.rooms.get(roomId)?.size || 0;
+        io.to(roomId).emit('roomUserCount', roomSize);
+
+        socket.emit('joinedRoom', { roomId });
+    });
+
+    socket.on('disconnecting', () => {
+        const roomId = socket.data.roomId;
+        if (roomId) {
+            const roomSize =
+                (io.sockets.adapter.rooms.get(roomId)?.size || 1) - 1;
+            io.to(roomId).emit('roomUserCount', roomSize);
+        }
+    });
 });
 
 resetTokensIfMonthChanged();
