@@ -1,4 +1,9 @@
 const SERVER_URL = window.location.origin.replace(/\/$/, ''); // サーバーのURLを定義
+const path = location.pathname.split('/').filter(Boolean);
+const roomId =
+	path[0] === 'room' && path[1]
+		? path[1]
+		: 'lobby';
 const socket = io(SERVER_URL);
 let messages = [];
 let myToken = localStorage.getItem('chatToken') || '';
@@ -120,9 +125,10 @@ function renderMessage(msg) {
 
 async function fetchMessages() {
 	try {
-		const res = await fetch(`${SERVER_URL}/api/messages`, {
-			cache: 'no-store'
-		});
+		const res = await fetch(
+			`${SERVER_URL}/api/messages/${encodeURIComponent(roomId)}`,
+			{ cache: 'no-store' }
+		);
 		if (!res.ok) throw 0;
 		messages = await res.json();
 		if (el.messages) {
@@ -154,7 +160,8 @@ async function sendMessage() {
 		username: myName,
 		message: txt,
 		token: myToken,
-		seed: mySeed
+		seed: mySeed,
+		roomId
 	};
 
 	try {
@@ -218,7 +225,8 @@ async function clearAllMessages() {
 				'Content-Type': 'application/json'
 			},
 			body: JSON.stringify({
-				password: p
+				password: p,
+				roomId
 			})
 		});
 
@@ -282,6 +290,10 @@ async function sendTokenToSocket() {
 	});
 }
 
+function joinRoom() {
+	socket.emit('joinRoom', { roomId });
+}
+
 socket.on('connect', async () => {
 	if (el.connText) el.connText.textContent = 'オンライン';
 	if (el.connDot) {
@@ -289,13 +301,13 @@ socket.on('connect', async () => {
 		el.connDot.classList.add('online');
 	}
 	if (myToken) {
-    	sendTokenToSocket();
+		sendTokenToSocket();
 	}
 });
 
 socket.on('reconnect', async () => {
 	if (myToken) {
-    	sendTokenToSocket();
+		sendTokenToSocket();
 	}
 });
 
@@ -315,6 +327,9 @@ socket.on('newMessage', msg => {
 	if (el.messages) el.messages.appendChild(renderMessage(msg));
 	if (isAutoScroll) scrollToBottom(true);
 });
+socket.on('authenticated', () => {
+	joinRoom();
+});
 socket.on('clearMessages', () => {
 	messages = [];
 	if (el.messages) el.messages.innerHTML = '';
@@ -329,14 +344,15 @@ socket.on('notify', data => {
 	if (!msg) return;
 	showToast(msg);
 });
-socket.on('userCount', d => {
-	if (!d) return;
-	if (typeof d === 'number' || typeof d === 'string') {
-		if (el.userCount) el.userCount.textContent = `オンライン: ${d}`;
-	} else if (typeof d === 'object' && d.userCount !== undefined) {
-		if (el.userCount) el.userCount.textContent = `オンライン: ${d.userCount}`;
+socket.on('roomUserCount', d => {
+	if (typeof d === 'number') {
+		if (el.userCount) {
+			el.userCount.textContent = `オンライン: ${d}`;
+		}
 	}
 });
 
-focusInput();
-fetchMessages();
+socket.on('joinedRoom', () => {
+	fetchMessages();
+	focusInput();
+});
