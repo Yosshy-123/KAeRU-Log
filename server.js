@@ -24,33 +24,29 @@ const redis = new Redis(process.env.REDIS_URL);
 redis.on('connect', () => console.log('Redis connected'));
 redis.on('error', err => console.error('Redis error', err));
 
+// 1ヶ月ごとにRedisDBをリセット
 async function resetTokensIfMonthChanged() {
     const now = new Date();
     const currentMonth =
         now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
 
-    const savedMonth = await redis.get('token:current_month');
+    const savedMonth = await redis.get('system:current_month');
     if (savedMonth === currentMonth) return;
 
-    const lockKey = 'token:reset_lock';
-    const locked = await redis.set(lockKey, '1', 'NX', 'EX', 10);
+    const lockKey = 'system:reset_lock';
+    const locked = await redis.set(lockKey, '1', 'NX', 'EX', 30);
     if (!locked) return;
 
     try {
-        console.log('[Token] Month changed, clearing all tokens');
+        console.log('[Redis] Month changed, FLUSHDB start');
 
-        const stream = redis.scanStream({
-            match: 'token:[0-9a-f-]*',
-            count: 100
-        });
+        await redis.flushdb();
 
-        for await (const keys of stream) {
-            if (keys.length) {
-                await redis.del(...keys);
-            }
-        }
+		await redis.set('system:current_month', currentMonth);
 
-        await redis.set('token:current_month', currentMonth);
+        console.log('[Redis] FLUSHDB completed');
+    } catch (err) {
+        console.error('[Redis] FLUSHDB failed', err);
     } finally {
         await redis.del(lockKey);
     }
