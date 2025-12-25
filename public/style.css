@@ -1,3 +1,5 @@
+@charset "utf-8";
+
 :root {
 	--bg: #0f1221;
 	--panel: #171a2b;
@@ -467,11 +469,6 @@ textarea {
 
 	footer.composer {
 		padding: 8px;
-	}
-
-	.row {
-		flex-direction: column;
-		gap: 8px;
 	}
 
 	.input {
