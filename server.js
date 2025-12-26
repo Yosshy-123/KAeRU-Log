@@ -157,17 +157,18 @@ app.get('/api/messages/:roomId', async (req, res) => {
 
 app.post('/api/messages', async (req, res) => {
     const { username, message, token, seed, roomId } = req.body;
-    if (!roomId)
-        return res.status(400).json({ error: 'roomId required' });
-	if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) {
+    if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) {
         return res.status(400).json({ error: 'invalid roomId' });
     }
-    if (!username || !message || !token || !seed)
+    if (!username || !message || !token || !seed) {
         return res.status(400).json({ error: 'Invalid data' });
-    if (typeof username !== 'string' || username.length === 0 || username.length > 24)
+    }
+    if (typeof username !== 'string' || username.length === 0 || username.length > 24) {
         return res.status(400).json({ error: 'Username length invalid' });
-    if (typeof message !== 'string' || message.length === 0 || message.length > 800)
+    }
+    if (typeof message !== 'string' || message.length === 0 || message.length > 800) {
         return res.status(400).json({ error: 'Message length invalid' });
+    }
 
     const clientId = await verifyToken(token, req.ip);
     if (!clientId) return res.status(403).json({ error: 'Invalid token or IP mismatch' });
@@ -175,11 +176,42 @@ app.post('/api/messages', async (req, res) => {
     const now = Date.now();
     const rateKey = `ratelimit:msg:${clientId}`;
 
+    const blockUntilRaw = await redis.get(`ratelimit:block:${clientId}`);
+    if (blockUntilRaw && now < Number(blockUntilRaw)) {
+        return res.status(429).json({ error: 'スパムを検知しました 1分間投稿することができません' });
+    }
+
     const last = await redis.get(rateKey);
     if (last && now - Number(last) < 1000) {
         return res.status(429).json({ error: '送信には1秒以上間隔をあけてください' });
     }
+
+    const intervalsKey = `ratelimit:intervals:${clientId}`;
+    let intervalsRaw = await redis.get(intervalsKey);
+    let intervals = intervalsRaw ? JSON.parse(intervalsRaw) : [];
+
+    const lastTimeKey = `ratelimit:lastTime:${clientId}`;
+    const lastTimeRaw = await redis.get(lastTimeKey);
+    const lastTime = lastTimeRaw ? Number(lastTimeRaw) : null;
+
+    if (lastTime !== null) {
+        const diff = now - lastTime;
+        intervals.push(diff);
+        if (intervals.length > 3) intervals.shift();
+
+        if (intervals.length === 3) {
+            const [a, b, c] = intervals;
+            const tolerance = 50;
+            if (Math.abs(a - b) <= tolerance && Math.abs(b - c) <= tolerance) {
+                await redis.set(`ratelimit:block:${clientId}`, now + 60 * 1000, 'PX', 60 * 1000);
+                return res.status(429).json({ error: 'スパムを検知しました 1分間投稿することができません' });
+            }
+        }
+    }
+
     await redis.set(rateKey, now, 'PX', 2000);
+    await redis.set(lastTimeKey, now);
+    await redis.set(intervalsKey, JSON.stringify(intervals));
 
     const storedMsg = { 
         username, 
@@ -188,9 +220,9 @@ app.post('/api/messages', async (req, res) => {
         clientId,
         seed 
     };
+
     try {
         const roomKey = `messages:${roomId}`;
-
         await redis.rpush(roomKey, JSON.stringify(storedMsg));
         await redis.ltrim(roomKey, -100, -1);
 
@@ -249,7 +281,12 @@ io.on('connection', socket => {
             clientId = crypto.randomUUID();
             assignedToken = generateToken(clientId);
 
-            await redis.set(`token:${clientId}`, JSON.stringify({ token: assignedToken, ip: clientIp }), 'EX', 60 * 60 * 24);
+            await redis.set(
+                `token:${clientId}`,
+                JSON.stringify({ token: assignedToken, ip: clientIp }),
+                'EX',
+                60 * 60 * 24
+            );
 
             const countKey = `ipTokenCount:${clientIp}`;
             const count = await redis.incr(countKey);
@@ -288,6 +325,80 @@ io.on('connection', socket => {
         io.to(roomId).emit('roomUserCount', roomSize);
 
         socket.emit('joinedRoom', { roomId });
+    });
+
+    socket.on('sendMessage', async ({ message, seed }) => {
+        const clientId = socket.data?.clientId;
+        const roomId = socket.data?.roomId;
+
+        if (!clientId) {
+            socket.emit('authRequired');
+            return;
+        }
+        if (!roomId) return;
+
+        const now = Date.now();
+        const rateKey = `ratelimit:msg:${clientId}`;
+
+        const blockUntilRaw = await redis.get(`ratelimit:block:${clientId}`);
+        if (blockUntilRaw && now < Number(blockUntilRaw)) {
+            socket.emit('errorMessage', 'スパムを検知しました 1分間投稿できません');
+            return;
+        }
+
+        const last = await redis.get(rateKey);
+        if (last && now - Number(last) < 1000) {
+            socket.emit('errorMessage', '送信には1秒以上間隔をあけてください');
+            return;
+        }
+
+        const intervalsKey = `ratelimit:intervals:${clientId}`;
+        let intervalsRaw = await redis.get(intervalsKey);
+        let intervals = intervalsRaw ? JSON.parse(intervalsRaw) : [];
+
+        const lastTimeKey = `ratelimit:lastTime:${clientId}`;
+        const lastTimeRaw = await redis.get(lastTimeKey);
+        const lastTime = lastTimeRaw ? Number(lastTimeRaw) : null;
+
+        if (lastTime !== null) {
+            const diff = now - lastTime;
+            intervals.push(diff);
+            if (intervals.length > 3) intervals.shift();
+
+            if (intervals.length === 3) {
+                const [a, b, c] = intervals;
+                const tolerance = 50;
+                if (Math.abs(a - b) <= tolerance && Math.abs(b - c) <= tolerance) {
+                    await redis.set(`ratelimit:block:${clientId}`, now + 60 * 1000, 'PX', 60 * 1000);
+                    socket.emit('errorMessage', 'スパムを検知しました 1分間投稿できません');
+                    return;
+                }
+            }
+        }
+
+        await redis.set(rateKey, now, 'PX', 2000);
+        await redis.set(lastTimeKey, now);
+        await redis.set(intervalsKey, JSON.stringify(intervals));
+
+        const storedMsg = {
+            username: '匿名',
+            message,
+            time: formatTime(new Date()),
+            clientId,
+            seed
+        };
+
+        const roomKey = `messages:${roomId}`;
+        await redis.rpush(roomKey, JSON.stringify(storedMsg));
+        await redis.ltrim(roomKey, -100, -1);
+
+        const publicMsg = {
+            username: storedMsg.username,
+            message: storedMsg.message,
+            time: storedMsg.time,
+            seed: storedMsg.seed
+        };
+        io.to(roomId).emit('newMessage', publicMsg);
     });
 
     socket.on('disconnecting', () => {
