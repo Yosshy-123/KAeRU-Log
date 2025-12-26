@@ -71,7 +71,7 @@ node server.js
 
 アプリの動作デモはこちらからご覧いただけます。
 
-[https://server-chat-suan.onrender.com/](https://server-chat-suan.onrender.com/)
+[https://kaeru-log.onrender.com](https://kaeru-log.onrender.com)
 
 ---
 
