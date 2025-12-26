@@ -10,73 +10,76 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-<div class="app">
-  <header class="appbar">
-    <div class="brand">
+
+<div class="chat-app">
+  <header class="chat-header">
+    <div class="app-brand">
       <img class="logo" src="/logo.png" alt="ロゴ" />
-      <div class="title">KAeRU Log</div>
+      <div class="app-title">KAeRU Log</div>
     </div>
-    <div class="status">
-      <div id="connDot" class="dot"></div>
-      <div id="connText">接続中...</div>
-      <div id="userCount">オンライン: -</div>
+
+    <div class="connection-status">
+      <div id="connectionIndicator" class="status-indicator"></div>
+      <div id="connectionText">接続中...</div>
+      <div id="onlineUserCount">オンライン: -</div>
     </div>
-    <div class="toolbar">
-      <button id="openUser" class="btn">プロフィール</button>
-      <button id="openAdmin" class="btn danger">管理</button>
+
+    <div class="header-actions">
+      <button id="openProfileButton" class="btn">プロフィール</button>
+      <button id="openAdminButton" class="btn danger">管理</button>
     </div>
   </header>
 
-  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <div id="toastNotification" class="toast-notification" role="status" aria-live="polite"></div>
 
   <main>
-    <div id="messages" class="messages" aria-live="polite"></div>
+    <div id="messageList" class="message-list" aria-live="polite"></div>
   </main>
 
   <div class="room-selector">
-    <input type="text" id="roomInput" placeholder="ルームIDを入力" maxlength="32">
-    <button id="joinRoomBtn" class="btn accent">入室</button>
+    <input type="text" id="roomIdInput" placeholder="ルームIDを入力" maxlength="32">
+    <button id="joinRoomButton" class="btn accent">入室</button>
   </div>
 
-  <footer class="composer">
-    <div class="row">
-      <div class="input">
-        <div class="u-box">
-          <div class="u-tag"><span>あなた</span><strong id="usernameTag"></strong></div>
+  <footer class="message-composer">
+    <div class="composer-row">
+      <div class="message-input-wrapper">
+        <div class="user-info-box">
+          <div class="user-name-tag"><span>あなた</span><strong id="currentUsernameLabel"></strong></div>
         </div>
-        <textarea id="messageInput" placeholder="メッセージを入力" maxlength="800"></textarea>
+        <textarea id="messageTextarea" placeholder="メッセージを入力" maxlength="800"></textarea>
       </div>
-      <div class="send">
-        <button id="sendBtn" class="btn accent">送信</button>
+      <div class="send-area">
+        <button id="sendMessageButton" class="btn accent">送信</button>
       </div>
     </div>
   </footer>
 </div>
 
-<div id="userModal" class="modal-backdrop">
-  <div class="modal">
+<div id="profileModal" class="modal-overlay">
+  <div class="modal-dialog">
     <h3>プロフィール</h3>
-    <div class="field">
-      <label for="username">ユーザー名（1〜24文字）</label>
-      <input id="username" type="text" maxlength="24" placeholder="例: たろう">
+    <div class="form-field">
+      <label for="profileNameInput">ユーザー名（1〜24文字）</label>
+      <input id="profileNameInput" type="text" maxlength="24" placeholder="例: たろう">
     </div>
-    <div class="actions">
-      <button id="userCancel" class="btn">閉じる</button>
-      <button id="userSave" class="btn accent">保存</button>
+    <div class="modal-actions">
+      <button id="closeProfileButton" class="btn">閉じる</button>
+      <button id="saveProfileButton" class="btn accent">保存</button>
     </div>
   </div>
 </div>
 
-<div id="adminModal" class="modal-backdrop">
-  <div class="modal">
+<div id="adminModal" class="modal-overlay">
+  <div class="modal-dialog">
     <h3>管理パネル</h3>
-    <div class="field">
-      <label for="adminPass">パスワード</label>
-      <input id="adminPass" type="password" placeholder="パスワードを入力">
+    <div class="form-field">
+      <label for="adminPasswordInput">パスワード</label>
+      <input id="adminPasswordInput" type="password" placeholder="パスワードを入力">
     </div>
-    <div class="actions">
-      <button id="adminClose" class="btn">閉じる</button>
-      <button id="clearBtn" class="btn danger">全メッセージ削除</button>
+    <div class="modal-actions">
+      <button id="closeAdminButton" class="btn">閉じる</button>
+      <button id="clearMessagesButton" class="btn danger">全メッセージ削除</button>
     </div>
   </div>
 </div>
