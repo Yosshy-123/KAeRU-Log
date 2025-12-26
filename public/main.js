@@ -1,26 +1,32 @@
 (() => {
 	const SERVER_URL = window.location.origin.replace(/\/$/, ''); // サーバーのURLを定義
+
 	const path = location.pathname.split('/').filter(Boolean);
 	let roomId = path[1];
+
 	if (path[0] !== 'room' || !roomId) {
 		location.replace('/room/open');
 		return;
 	}
+
 	if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) {
 		location.replace('/room/open');
 		return;
 	}
+
 	const socket = io(SERVER_URL);
+
 	let messages = [];
 	let myToken = localStorage.getItem('chatToken') || '';
 	let myName = localStorage.getItem('chat_username') || '';
 	let mySeed = localStorage.getItem('chat_seed');
+
 	if (!mySeed) {
-		mySeed = generateSeed(40);
+		mySeed = generateUserSeed(40);
 		localStorage.setItem('chat_seed', mySeed);
 	}
 
-	function generateSeed(length) {
+	function generateUserSeed(length) {
 		const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 		let result = '';
 		const array = new Uint32Array(length);
@@ -31,65 +37,70 @@
 		return result;
 	}
 
-	const el = {
-		container: document.querySelector('main'),
-		messages: document.getElementById('messages'),
-		input: document.getElementById('messageInput'),
-		send: document.getElementById('sendBtn'),
-		usernameTag: document.getElementById('usernameTag'),
-		toast: document.getElementById('toast'),
-		userModal: document.getElementById('userModal'),
-		usernameInput: document.getElementById('username'),
-		userOpen: document.getElementById('openUser'),
-		userCancel: document.getElementById('userCancel'),
-		userSave: document.getElementById('userSave'),
+	const elements = {
+		chatContainer: document.querySelector('main'),
+		messageList: document.getElementById('messageList'),
+		messageTextarea: document.getElementById('messageTextarea'),
+		sendMessageButton: document.getElementById('sendMessageButton'),
+		currentUsernameLabel: document.getElementById('currentUsernameLabel'),
+		toastNotification: document.getElementById('toastNotification'),
+
+		profileModal: document.getElementById('profileModal'),
+		profileNameInput: document.getElementById('profileNameInput'),
+		openProfileButton: document.getElementById('openProfileButton'),
+		closeProfileButton: document.getElementById('closeProfileButton'),
+		saveProfileButton: document.getElementById('saveProfileButton'),
+
 		adminModal: document.getElementById('adminModal'),
-		adminOpen: document.getElementById('openAdmin'),
-		adminClose: document.getElementById('adminClose'),
-		adminPass: document.getElementById('adminPass'),
-		clearBtn: document.getElementById('clearBtn'),
-		connText: document.getElementById('connText'),
-		connDot: document.getElementById('connDot'),
-		userCount: document.getElementById('userCount'),
-		roomInput: document.getElementById('roomInput'),
-		joinRoomBtn: document.getElementById('joinRoomBtn')
+		openAdminButton: document.getElementById('openAdminButton'),
+		closeAdminButton: document.getElementById('closeAdminButton'),
+		adminPasswordInput: document.getElementById('adminPasswordInput'),
+		clearMessagesButton: document.getElementById('clearMessagesButton'),
+
+		connectionText: document.getElementById('connectionText'),
+		connectionIndicator: document.getElementById('connectionIndicator'),
+		onlineUserCount: document.getElementById('onlineUserCount'),
+
+		roomIdInput: document.getElementById('roomIdInput'),
+		joinRoomButton: document.getElementById('joinRoomButton')
 	};
 
-	if (el.usernameTag) el.usernameTag.textContent = myName || '未設定';
+	if (elements.currentUsernameLabel) {
+		elements.currentUsernameLabel.textContent = myName || '未設定';
+	}
+
 	let isAutoScroll = true;
 
-	function showToast(t, ms = 1800) {
-		if (!el.toast) return;
-		el.toast.textContent = t;
-		el.toast.classList.add('show');
-		clearTimeout(showToast._t);
-		showToast._t = setTimeout(() => el.toast.classList.remove('show'), ms);
+	function showToastMessage(text, ms = 1800) {
+		if (!elements.toastNotification) return;
+		elements.toastNotification.textContent = text;
+		elements.toastNotification.classList.add('show');
+		clearTimeout(showToastMessage._t);
+		showToastMessage._t = setTimeout(() => {
+			elements.toastNotification.classList.remove('show');
+		}, ms);
 	}
 
-	function nowTime() {
-		return new Date().toLocaleString();
-	}
-
-	function atBottom() {
-		const c = el.container || document.documentElement;
+	function isScrolledToBottom() {
+		const c = elements.chatContainer || document.documentElement;
 		return c.scrollHeight - c.scrollTop - c.clientHeight < 80;
 	}
 
-	function scrollToBottom(smooth = true) {
-		const c = el.container || document.documentElement;
+	function scrollChatToBottom(smooth = true) {
+		const c = elements.chatContainer || document.documentElement;
 		c.scrollTo({
 			top: c.scrollHeight,
 			behavior: smooth ? 'smooth' : 'auto'
 		});
 	}
 
-	function initials(name) {
+	function getUserInitials(name) {
 		if (!name) return '?';
 		const s = name.trim().split(/\s+/).map(p => p[0] || '').join('').toUpperCase();
 		return s.slice(0, 2);
 	}
 
-	function focusInput(elm = el.input) {
+	function focusMessageInput(elm = elements.messageTextarea) {
 		if (!elm) return;
 		elm.focus();
 		elm.scrollIntoView({
@@ -103,71 +114,86 @@
 		}
 	}
 
-	function renderMessage(msg) {
+	function createMessageElement(msg) {
 		const isSelf = msg.seed === mySeed;
+
 		const wrap = document.createElement('div');
-		wrap.className = 'msg' + (isSelf ? ' self' : '');
+		wrap.className = 'message-item' + (isSelf ? ' is-self' : '');
+
 		const avatar = document.createElement('div');
-		avatar.className = 'avatar';
-		avatar.textContent = initials(msg.username);
+		avatar.className = 'message-avatar';
+		avatar.textContent = getUserInitials(msg.username);
+
 		const bubble = document.createElement('div');
-		bubble.className = 'bubble';
+		bubble.className = 'message-bubble';
+
 		const meta = document.createElement('div');
-		meta.className = 'meta';
+		meta.className = 'message-meta';
+
 		const nameEl = document.createElement('span');
-		nameEl.className = 'name';
+		nameEl.className = 'message-username';
 		nameEl.textContent = msg.username || '匿名';
+
 		const dot = document.createElement('span');
 		dot.textContent = '•';
 		dot.style.opacity = '0.6';
+
 		const timeEl = document.createElement('span');
 		timeEl.textContent = msg.time || '';
+
 		meta.append(nameEl, dot, timeEl);
+
 		const textEl = document.createElement('div');
-		textEl.className = 'text';
+		textEl.className = 'message-text';
 		textEl.textContent = msg.message || '';
+
 		bubble.append(meta, textEl);
 		wrap.append(avatar, bubble);
+
 		return wrap;
 	}
 
-	async function fetchMessages() {
+	async function loadMessageHistory() {
 		try {
 			const res = await fetch(
-				`${SERVER_URL}/api/messages/${encodeURIComponent(roomId)}`, {
-					cache: 'no-store'
-				}
+				`${SERVER_URL}/api/messages/${encodeURIComponent(roomId)}`,
+				{ cache: 'no-store' }
 			);
 			if (!res.ok) throw 0;
+
 			messages = await res.json();
-			if (el.messages) {
-				el.messages.innerHTML = '';
-				messages.forEach(msg => el.messages.appendChild(renderMessage(msg)));
+
+			if (elements.messageList) {
+				elements.messageList.innerHTML = '';
+				messages.forEach(msg => {
+					elements.messageList.appendChild(createMessageElement(msg));
+				});
 			}
-			if (isAutoScroll) scrollToBottom(false);
+
+			if (isAutoScroll) scrollChatToBottom(false);
 		} catch {
-			showToast('メッセージ取得に失敗しました');
+			showToastMessage('メッセージ取得に失敗しました');
 		}
 	}
 
-	async function sendMessage() {
-		const txt = (el.input && el.input.value || '').trim();
-		if (!txt) return;
+	async function sendChatMessage() {
+		const text = (elements.messageTextarea && elements.messageTextarea.value || '').trim();
+		if (!text) return;
 
 		if (!myName) {
-			if (el.userModal) el.userModal.classList.add('show');
-			showToast('ユーザー名を設定してください');
+			if (elements.profileModal) elements.profileModal.classList.add('show');
+			showToastMessage('ユーザー名を設定してください');
 			return;
 		}
 
 		if (!myToken) {
-			showToast('再接続してください');
+			showToastMessage('再接続してください');
 			return;
 		}
 
 		const payload = {
 			username: myName,
-			message: txt,
+			message: text,
 			token: myToken,
 			seed: mySeed,
 			roomId
@@ -176,67 +202,65 @@
 		try {
 			const res = await fetch(`${SERVER_URL}/api/messages`, {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
+				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(payload)
 			});
 
 			const data = await res.json().catch(() => ({}));
 
 			if (!res.ok) {
-  			  if (res.status === 403) {
-   			     myToken = '';
-     			   localStorage.removeItem('chatToken');
-     			   console.warn('Token invalid, please reconnect.');
-  			  } else {
-   			     console.warn('HTTP error:', data.error);
- 			   }
-  			  return;
+				if (res.status === 403) {
+					myToken = '';
+					localStorage.removeItem('chatToken');
+					console.warn('Token invalid, please reconnect.');
+				} else {
+					console.warn('HTTP error:', data.error);
+				}
+				return;
 			}
 
-			if (el.input) el.input.value = '';
+			if (elements.messageTextarea) elements.messageTextarea.value = '';
 		} catch (e) {
 			console.error(e);
-			showToast('送信に失敗しました');
+			showToastMessage('送信に失敗しました');
 		}
 	}
 
-	function openUserModal() {
-		if (el.usernameInput) el.usernameInput.value = myName || '';
-		if (el.userModal) el.userModal.classList.add('show');
-		focusInput(el.usernameInput);
+	function openProfileModal() {
+		if (elements.profileNameInput) {
+			elements.profileNameInput.value = myName || '';
+		}
+		if (elements.profileModal) elements.profileModal.classList.add('show');
+		focusMessageInput(elements.profileNameInput);
 	}
 
-	function closeUserModal() {
-		if (el.userModal) el.userModal.classList.remove('show');
+	function closeProfileModal() {
+		if (elements.profileModal) elements.profileModal.classList.remove('show');
 	}
 
 	function openAdminModal() {
-		if (el.adminPass) el.adminPass.value = '';
-		if (el.adminModal) el.adminModal.classList.add('show');
-		focusInput(el.adminPass);
+		if (elements.adminPasswordInput) elements.adminPasswordInput.value = '';
+		if (elements.adminModal) elements.adminModal.classList.add('show');
+		focusMessageInput(elements.adminPasswordInput);
 	}
 
 	function closeAdminModal() {
-		if (el.adminModal) el.adminModal.classList.remove('show');
+		if (elements.adminModal) elements.adminModal.classList.remove('show');
 	}
 
-	async function clearAllMessages() {
-		const p = el.adminPass && el.adminPass.value || '';
-		if (!p) {
-			showToast('パスワードを入力してください');
+	async function deleteAllMessages() {
+		const password = elements.adminPasswordInput && elements.adminPasswordInput.value || '';
+		if (!password) {
+			showToastMessage('パスワードを入力してください');
 			return;
 		}
 
 		try {
 			const res = await fetch(`${SERVER_URL}/api/clear`, {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
+				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					password: p,
+					password,
 					roomId
 				})
 			});
@@ -244,131 +268,158 @@
 			const data = await res.json().catch(() => ({}));
 
 			if (!res.ok) {
-				showToast(data.error || '削除に失敗しました');
+				showToastMessage(data.error || '削除に失敗しました');
 				return;
 			}
 
 			closeAdminModal();
-			focusInput();
+			focusMessageInput();
 		} catch {
-			showToast('削除に失敗しました');
+			showToastMessage('削除に失敗しました');
 		}
 	}
 
-	if (el.send) el.send.addEventListener('click', sendMessage);
-	if (el.input) {
+	if (elements.sendMessageButton) {
+		elements.sendMessageButton.addEventListener('click', sendChatMessage);
+	}
+
+	if (elements.messageTextarea) {
 		const isMobileLike = window.matchMedia('(max-width: 820px) and (pointer: coarse)').matches;
-		el.input.addEventListener('keydown', e => {
+
+		elements.messageTextarea.addEventListener('keydown', e => {
 			if (isMobileLike) return;
 			if (e.key === 'Enter' && !e.shiftKey) {
 				e.preventDefault();
-				sendMessage();
+				sendChatMessage();
 			}
 		});
-		if (el.userOpen) el.userOpen.addEventListener('click', openUserModal);
-		if (el.userCancel) el.userCancel.addEventListener('click', () => {
-			closeUserModal();
-			focusInput();
-		});
-		if (el.userSave) el.userSave.addEventListener('click', async () => {
-			const v = (el.usernameInput && el.usernameInput.value || '').trim().slice(0, 24);
-			if (!v) {
-				showToast('ユーザー名は1〜24文字で設定してください');
-				return;
-			}
-			myName = v;
-			localStorage.setItem('chat_username', myName);
-			if (el.usernameTag) el.usernameTag.textContent = myName;
-			closeUserModal();
-			showToast('プロフィールを保存しました');
-			focusInput();
-		});
-		if (el.adminOpen) el.adminOpen.addEventListener('click', openAdminModal);
-		if (el.adminClose) el.adminClose.addEventListener('click', () => {
-			closeAdminModal();
-			focusInput();
-		});
-		if (el.clearBtn) el.clearBtn.addEventListener('click', clearAllMessages);
-		if (el.container) el.container.addEventListener('scroll', () => {
-			isAutoScroll = atBottom();
-		});
-	}
 
-	async function sendTokenToSocket() {
-		if (!myToken) return;
-		socket.emit('authenticate', {
-			token: myToken
-		});
+		if (elements.openProfileButton) {
+			elements.openProfileButton.addEventListener('click', openProfileModal);
+		}
+
+		if (elements.closeProfileButton) {
+			elements.closeProfileButton.addEventListener('click', () => {
+				closeProfileModal();
+				focusMessageInput();
+			});
+		}
+
+		if (elements.saveProfileButton) {
+			elements.saveProfileButton.addEventListener('click', () => {
+				const v = (elements.profileNameInput && elements.profileNameInput.value || '')
+					.trim()
+					.slice(0, 24);
+
+				if (!v) {
+					showToastMessage('ユーザー名は1〜24文字で設定してください');
+					return;
+				}
+
+				myName = v;
+				localStorage.setItem('chat_username', myName);
+				if (elements.currentUsernameLabel) {
+					elements.currentUsernameLabel.textContent = myName;
+				}
+				closeProfileModal();
+				showToastMessage('プロフィールを保存しました');
+				focusMessageInput();
+			});
+		}
+
+		if (elements.openAdminButton) {
+			elements.openAdminButton.addEventListener('click', openAdminModal);
+		}
+
+		if (elements.closeAdminButton) {
+			elements.closeAdminButton.addEventListener('click', () => {
+				closeAdminModal();
+				focusMessageInput();
+			});
+		}
+
+		if (elements.clearMessagesButton) {
+			elements.clearMessagesButton.addEventListener('click', deleteAllMessages);
+		}
+
+		if (elements.chatContainer) {
+			elements.chatContainer.addEventListener('scroll', () => {
+				isAutoScroll = isScrolledToBottom();
+			});
+		}
 	}
 
 	function joinRoom() {
-		socket.emit('joinRoom', {
-			roomId
-		});
+		socket.emit('joinRoom', { roomId });
 	}
 
-    socket.on('connect', () => {
-	    if (el.connText) el.connText.textContent = 'オンライン';
-	    if (el.connDot) {
-		    el.connDot.classList.remove('offline');
-		    el.connDot.classList.add('online');
-	    }
-	     socket.emit('authenticate', { token: myToken || '' });
-    });
+	socket.on('connect', () => {
+		if (elements.connectionText) elements.connectionText.textContent = 'オンライン';
+		if (elements.connectionIndicator) {
+			elements.connectionIndicator.classList.remove('offline');
+			elements.connectionIndicator.classList.add('online');
+		}
+		socket.emit('authenticate', { token: myToken || '' });
+	});
 
-    socket.on('reconnect', () => {
-    	socket.emit('authenticate', { token: myToken || '' });
-    });
+	socket.on('reconnect', () => {
+		socket.emit('authenticate', { token: myToken || '' });
+	});
 
 	socket.on('disconnect', () => {
-		if (el.connText) el.connText.textContent = '切断';
-		if (el.connDot) {
-			el.connDot.classList.remove('online');
-			el.connDot.classList.add('offline');
+		if (elements.connectionText) elements.connectionText.textContent = '切断';
+		if (elements.connectionIndicator) {
+			elements.connectionIndicator.classList.remove('online');
+			elements.connectionIndicator.classList.add('offline');
 		}
 	});
+
 	socket.on('assignToken', token => {
 		myToken = token;
 		localStorage.setItem('chatToken', token);
 	});
+
 	socket.on('newMessage', msg => {
 		messages.push(msg);
-		if (el.messages) el.messages.appendChild(renderMessage(msg));
-		if (isAutoScroll) scrollToBottom(true);
+		if (elements.messageList) {
+			elements.messageList.appendChild(createMessageElement(msg));
+		}
+		if (isAutoScroll) scrollChatToBottom(true);
 	});
+
 	socket.on('authenticated', () => {
 		joinRoom();
 	});
+
 	socket.on('clearMessages', () => {
 		messages = [];
-		if (el.messages) el.messages.innerHTML = '';
-		showToast('全メッセージ削除されました');
+		if (elements.messageList) elements.messageList.innerHTML = '';
+		showToastMessage('全メッセージ削除されました');
 	});
+
 	socket.on('notify', data => {
 		if (!data) return;
-		const msg =
-			typeof data === 'string' ?
-			data :
-			data.message;
+		const msg = typeof data === 'string' ? data : data.message;
 		if (!msg) return;
-		showToast(msg);
+		showToastMessage(msg);
 	});
-	socket.on('roomUserCount', d => {
-		if (typeof d === 'number') {
-			if (el.userCount) {
-				el.userCount.textContent = `オンライン: ${d}`;
+
+	socket.on('roomUserCount', count => {
+		if (typeof count === 'number') {
+			if (elements.onlineUserCount) {
+				elements.onlineUserCount.textContent = `オンライン: ${count}`;
 			}
 		}
 	});
 
 	socket.on('joinedRoom', () => {
-		fetchMessages();
-		focusInput();
+		loadMessageHistory();
+		focusMessageInput();
 	});
 
-	function switchRoom(newRoom) {
+	function changeChatRoom(newRoom) {
 		if (!newRoom || !/^[a-zA-Z0-9_-]{1,32}$/.test(newRoom)) {
-			showToast('ルーム名は英数字・一部記号32文字以内で指定してください');
+			showToastMessage('ルーム名は英数字・一部記号32文字以内で指定してください');
 			return;
 		}
 
@@ -377,21 +428,20 @@
 		location.href = `/room/${encodeURIComponent(newRoom)}`;
 	}
 
-	if (el.joinRoomBtn) {
-		el.joinRoomBtn.addEventListener('click', () => {
-			const newRoom = el.roomInput.value.trim();
-			switchRoom(newRoom);
+	if (elements.joinRoomButton) {
+		elements.joinRoomButton.addEventListener('click', () => {
+			const newRoom = elements.roomIdInput.value.trim();
+			changeChatRoom(newRoom);
 		});
 	}
 
-	if (el.roomInput) {
-		el.roomInput.addEventListener('keydown', e => {
+	if (elements.roomIdInput) {
+		elements.roomIdInput.addEventListener('keydown', e => {
 			if (e.key === 'Enter') {
 				e.preventDefault();
-				if (el.joinRoomBtn) el.joinRoomBtn.click();
+				if (elements.joinRoomButton) elements.joinRoomButton.click();
 			}
 		});
-
-		el.roomInput.value = roomId;
+		elements.roomIdInput.value = roomId;
 	}
 })();
