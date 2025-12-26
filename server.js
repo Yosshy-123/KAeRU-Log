@@ -94,7 +94,7 @@ function createAuthToken(clientId) {
 	const timestamp = Date.now();
 	const data = `${clientId}.${timestamp}`;
 
-	const hmac = crypto.createHmac('sha256', TOKEN_SECRET);
+	const hmac = crypto.createHmac('sha256', SECRET_KEY);
 	hmac.update(data);
 	const signature = hmac.digest('hex');
 
