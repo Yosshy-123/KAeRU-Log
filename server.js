@@ -71,7 +71,8 @@ function logUserAction(clientId, action, extra = {}) {
   const username = extra.username ? ` [Username:${extra.username}]` : '';
   const info = { ...extra };
   delete info.username;
-  console.log(`[${time}] [User:${clientId}]${username} Action: ${action}`, info);
+  const extraStr = Object.keys(info).length ? ` ${JSON.stringify(info)}` : '';
+  console.log(`[${time}] [User:${clientId}]${username} Action: ${action}${extraStr}`);
 }
 
 /*
@@ -266,12 +267,7 @@ app.post('/api/messages', async (req, res) => {
 			seed
 		});
 
-		logUserAction(clientId, 'sendMessage', {
-			roomId,
-			username: storedMessage.username,
-			message: storedMessage.message,
-			seed
-		});
+		logUserAction(clientId, 'sendMessage', { roomId, username: storedMessage.username, message: storedMessage.message });
 
 		res.json({ ok: true });
 	} catch (err) {
@@ -379,10 +375,7 @@ io.on('connection', socket => {
 		socket.join(roomId);
 		socket.data.roomId = roomId;
 
- 		logUserAction(socket.data.clientId, 'joinRoom', {
-			roomId,
-			username: socket.data.username
-		});
+ 		logUserAction(socket.data.clientId, 'joinRoom', { roomId, username: socket.data.username });
 
 		const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
 		io.to(roomId).emit('roomUserCount', roomSize);
@@ -398,10 +391,7 @@ io.on('connection', socket => {
 			io.to(roomId).emit('roomUserCount', roomSize);
 		}
 		if (socket.data?.clientId) {
-			logUserAction(socket.data.clientId, 'disconnecting', { 
-				roomId,
-				username: socket.data.username
-			});
+			logUserAction(socket.data.clientId, 'disconnecting', { roomId, username: socket.data.username });
 		}
 	});
 });
