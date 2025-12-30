@@ -42,14 +42,46 @@ async function resetRedisIfMonthChanged() {
 
     try {
         console.log('[Redis] Month changed, FLUSHDB start');
+        const keys = await redisClient.keys('messages:*');
+        const roomIds = keys.map(k => k.replace('messages:', ''));
         await redisClient.flushdb();
         await redisClient.set('system:current_month', currentMonth);
+        const systemMessage = createSystemMessage(
+            '<strong>メンテナンスのためメッセージなどがリセットされました</strong>'
+        );
+        for (const roomId of roomIds) {
+            const roomKey = `messages:${roomId}`;
+            await redisClient.rpush(roomKey, JSON.stringify(systemMessage));
+            io.to(roomId).emit('newMessage', {
+                username: systemMessage.username,
+                message: systemMessage.message,
+                time: systemMessage.time,
+                seed: systemMessage.seed
+            });
+        }
         console.log('[Redis] FLUSHDB completed');
     } catch (err) {
         console.error('[Redis] FLUSHDB failed', err);
-    } finally {
-        await redisClient.del(lockKey);
     }
+}
+
+/* ---------------- 毎月0:00 JSTにRedisをリセット ---------------- */
+function scheduleMonthlyReset() {
+    const now = new Date();
+    const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+
+    const nextMonth = new Date(
+        jstNow.getFullYear(),
+        jstNow.getMonth() + 1,
+        1, 0, 0, 0
+    );
+
+    const delay = nextMonth.getTime() - jstNow.getTime();
+
+    setTimeout(async () => {
+        await resetRedisIfMonthChanged().catch(console.error);
+        scheduleMonthlyReset();
+    }, delay);
 }
 
 const app = express();
@@ -162,6 +194,18 @@ function escapeHTML(str) {
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
+}
+
+/* ---------------- システムメッセージ生成 ---------------- */
+
+function createSystemMessage(htmlMessage) {
+    return {
+        username: 'System',
+        message: htmlMessage,
+        time: formatJSTTime(new Date()),
+        clientId: 'system',
+        seed: 'system'
+    };
 }
 
 /* ---------------- API ---------------- */
@@ -430,7 +474,8 @@ app.get('*', function (req, res) {
 
 (async function () {
     try {
-        await resetRedisIfMonthChanged()
+        await resetRedisIfMonthChanged();
+        scheduleMonthlyReset();
     } catch (err) {
         console.error('Token reset failed', err);
     } finally {
