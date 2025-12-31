@@ -28,7 +28,6 @@ redisClient.on('error', function (err) {
 });
 
 /* ---------------- 月が変わったらRedisをリセット ---------------- */
-
 async function resetRedisIfMonthChanged() {
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -42,16 +41,37 @@ async function resetRedisIfMonthChanged() {
 
     try {
         console.log('[Redis] Month changed, FLUSHDB start');
+
         const keys = await redisClient.keys('messages:*');
-        const roomIds = keys.map(k => k.replace('messages:', ''));
+        const targetRoomIds = [];
+
+        for (const key of keys) {
+            const messages = await redisClient.lrange(key, 0, -1);
+
+            const hasUserMessage = messages.some(m => {
+                try {
+                    const parsed = JSON.parse(m);
+                    return parsed.clientId && parsed.clientId !== 'system';
+                } catch {
+                    return false;
+                }
+            });
+
+            if (hasUserMessage) {
+                targetRoomIds.push(key.replace('messages:', ''));
+            }
+        }
+
         await redisClient.flushdb();
         await redisClient.set('system:current_month', currentMonth);
+
         const systemMessage = createSystemMessage(
             '<strong>メンテナンスのためメッセージなどがリセットされました</strong>'
         );
-        for (const roomId of roomIds) {
-            const roomKey = `messages:${roomId}`;
-            await redisClient.rpush(roomKey, JSON.stringify(systemMessage));
+
+        for (const roomId of targetRoomIds) {
+            const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
+            if (roomSize === 0) continue;
             io.to(roomId).emit('newMessage', {
                 username: systemMessage.username,
                 message: systemMessage.message,
@@ -59,6 +79,7 @@ async function resetRedisIfMonthChanged() {
                 seed: systemMessage.seed
             });
         }
+
         console.log('[Redis] FLUSHDB completed');
     } catch (err) {
         console.error('[Redis] FLUSHDB failed', err);
@@ -98,7 +119,6 @@ const SECRET_KEY = process.env.SECRET_KEY || 'supersecretkey1234';
 const PORT = process.env.PORT || 3000;
 
 /* ---------------- ログ ---------------- */
-
 function logUserAction(clientId, action, extra = {}) {
     const time = formatJSTTimeLog(new Date());
     const username = extra.username ? ` [Username:${extra.username}]` : '';
@@ -109,13 +129,11 @@ function logUserAction(clientId, action, extra = {}) {
 }
 
 /* ---------------- クライアントへ通知 ---------------- */
-
 function sendNotification(target, message, type = 'info') {
     target.emit('notify', { message, type });
 }
 
 /* ---------------- JST表示用時刻フォーマット ---------------- */
-
 function formatJSTTime(date) {
     const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
 
@@ -129,7 +147,6 @@ function formatJSTTime(date) {
 }
 
 /* ---------------- ログ用JST表示用時刻フォーマット ---------------- */
-
 function formatJSTTimeLog(date) {
     const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
 
@@ -144,7 +161,6 @@ function formatJSTTimeLog(date) {
 }
 
 /* ---------------- 認証トークン生成 ---------------- */
-
 function createAuthToken(clientId) {
     const timestamp = Date.now();
     const data = `${clientId}.${timestamp}`;
@@ -157,7 +173,6 @@ function createAuthToken(clientId) {
 }
 
 /* ---------------- トークン検証 ---------------- */
-
 async function validateAuthToken(token) {
     if (!token) return null;
 
@@ -185,7 +200,6 @@ async function validateAuthToken(token) {
 }
 
 /* ---------------- HTMLエスケープ ---------------- */
-
 function escapeHTML(str) {
     if (!str) return '';
     return str
@@ -197,19 +211,17 @@ function escapeHTML(str) {
 }
 
 /* ---------------- システムメッセージ生成 ---------------- */
-
 function createSystemMessage(htmlMessage) {
     return {
-        username: 'System',
+        username: 'システム',
         message: htmlMessage,
-        time: formatJSTTime(new Date()),
+        time: new Date().toISOString(),
         clientId: 'system',
         seed: 'system'
     };
 }
 
 /* ---------------- API ---------------- */
-
 app.get('/api/messages/:roomId', async function (req, res) {
     try {
         const roomId = req.params.roomId;
@@ -379,7 +391,6 @@ app.post('/api/clear', async function (req, res) {
 });
 
 /* ---------------- Socket.IO ---------------- */
-
 io.on('connection', function (socket) {
     socket.on('authenticate', async function (data) {
         const token = data.token;
@@ -471,7 +482,6 @@ app.get('*', function (req, res) {
 });
 
 /* ---------------- サーバー起動 ---------------- */
-
 (async function () {
     try {
         await resetRedisIfMonthChanged();
