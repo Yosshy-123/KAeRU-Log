@@ -224,52 +224,42 @@ app.post('/api/messages', async function (req, res) {
     const clientId = await validateAuthToken(token);
     if (!clientId) return res.status(403).json({ error: 'Invalid token' });
 
+    const MESSAGE_RATE_LIMIT_MS = 1000; // 1秒に1回
+    const REPEAT_LIMIT = 3;             // 同じメッセージ連続送信回数
+    const MUTE_DURATION_SEC = 30;       // ミュート時間
+
     const muteKey = `msg:mute:${clientId}`;
     if (await redisClient.exists(muteKey)) {
-        return res.status(429).json({ error: true });
+        return res.status(429).json({ error: 'Muted due to repeated messages' });
     }
 
+    const rateKey = `ratelimit:msg:${clientId}`;
+    const lastSent = await redisClient.get(rateKey);
     const now = Date.now();
-    const rateLimitKey = `ratelimit:msg:${clientId}`;
-    const lastTimestampKey = `msg:last_ts:${clientId}`;
-    const lastIntervalKey = `msg:last_interval:${clientId}`;
-    const repeatCountKey = `msg:same_count:${clientId}`;
+    if (lastSent && now - Number(lastSent) < MESSAGE_RATE_LIMIT_MS) {
+        return res.status(429).json({ error: 'Please wait before sending next message' });
+    }
+    await redisClient.set(rateKey, now, 'PX', MESSAGE_RATE_LIMIT_MS);
 
-    const lastTimestamp = await redisClient.get(lastTimestampKey);
+    const lastMessageKey = `msg:last_message:${clientId}`;
+    const repeatCountKey = `msg:repeat_count:${clientId}`;
 
-    if (lastTimestamp) {
-        const interval = now - Number(lastTimestamp);
-        const lastInterval = await redisClient.get(lastIntervalKey);
-
-        if (lastInterval && Math.abs(interval - Number(lastInterval)) <= 100) {
-            const repeatCount = await redisClient.incr(repeatCountKey);
-
-            if (repeatCount >= 5) {
-                await redisClient.set(muteKey, '1', 'EX', 20);
-                await redisClient.del(repeatCountKey, lastIntervalKey);
-
-                io.to(clientId).emit('notify', {
-                    message: '連続送信のため20秒間ミュートされました',
-                    type: 'warning'
-                });
-
-                return res.status(429).json({ error: true });
-            }
-        } else {
-            await redisClient.set(repeatCountKey, 0, 'EX', 30);
-            await redisClient.set(lastIntervalKey, interval, 'EX', 30);
+    const lastMessage = await redisClient.get(lastMessageKey);
+    if (lastMessage === message) {
+        const count = await redisClient.incr(repeatCountKey);
+        if (count >= REPEAT_LIMIT) {
+            await redisClient.set(muteKey, '1', 'EX', MUTE_DURATION_SEC);
+            await redisClient.del(repeatCountKey);
+            io.to(clientId).emit('notify', {
+                message: `同じメッセージを連続送信したため${MUTE_DURATION_SEC}秒間ミュートされました`,
+                type: 'warning'
+            });
+            return res.status(429).json({ error: 'Muted' });
         }
     } else {
-        await redisClient.set(repeatCountKey, 0, 'EX', 30);
+        await redisClient.set(repeatCountKey, 1, 'EX', MUTE_DURATION_SEC);
     }
-
-    await redisClient.set(lastTimestampKey, now, 'EX', 30);
-
-    const lastSent = await redisClient.get(rateLimitKey);
-    if (lastSent && now - Number(lastSent) < 1000) {
-        return res.status(429).json({ error: '送信には1秒以上間隔をあけてください' });
-    }
-    await redisClient.set(rateLimitKey, now, 'PX', 2000);
+    await redisClient.set(lastMessageKey, message, 'EX', MUTE_DURATION_SEC);
 
     const storedMessage = {
         username: escapeHTML(username),
