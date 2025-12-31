@@ -67,13 +67,10 @@ async function monthlyRedisReset(io) {
                 await redisClient.set('system:current_month', currentMonth);
 
                 const systemMessage = createSystemMessage(
-                    '<strong>メンテナンスのためメッセージなどがリセットされました</strong>'
+                    '<strong>メンテナンスのためデータベースがリセットされました</strong>'
                 );
 
                 for (const roomId of targetRoomIds) {
-                    const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
-                    if (roomSize === 0) continue;
-
                     io.to(roomId).emit('newMessage', {
                         username: systemMessage.username,
                         message: systemMessage.message,
