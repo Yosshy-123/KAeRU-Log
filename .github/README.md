@@ -97,7 +97,7 @@ For bugs or feature requests, please create an **Issue** or contact us at *Yossh
 
 ## License
 
-This project is released under the **MIT License**.
+This project is released under the **MIT LICENSE**.
 
 ---
 
