@@ -5,10 +5,10 @@
 ---
 
 KAeRU Log is a lightweight chat application built using Node.js.
-This application **must always be accessed via Cloudflare Workers**.
+- This application **must always be accessed via Cloudflare Workers**.
 
-- The application itself is hosted on Render or Koyeb.
-- Cloudflare Workers acts as a reverse proxy, relaying requests.
+- The main application is hosted on Render or Koyeb.
+- Cloudflare Workers act as a reverse proxy to relay requests.
 
 ---
 
@@ -40,61 +40,61 @@ This application **must always be accessed via Cloudflare Workers**.
 
 ## Deployment
 
-### 1. Deploy the Application Backend
+### 1. Deploy the Main Application
 
-Deploy the application backend using Render or Koyeb.
+Deploy the main application using Render or Koyeb.
 
 #### For Render
 
-1. Select **New → Web Service** on the Render dashboard.
+1. In the Render dashboard, select **New → Web Service**.
 2. Select `KAeRU-Log` as the GitHub repository.
 3. Set the **Environment** to Node (v22+).
-4. Set the **Build Command**:
+4. Set the **Build Command**.
 
 ```bash
 npm install
 ```
 
-5. Set the **Start Command**:
+5. Set the **Start Command**.
 
 ```bash
 node server.js
 ```
 
-6. Configure environment variables:
+6. Set environment variables.
 
 ```env
 REDIS_URL=redis://<host>:<port>
-ADMIN_PASS=<administrator password>
-SECRET_KEY=<secret key for token>
-WORKER_SECRET=<same key as worker.js>
+ADMIN_PASS=<admin password>
+SECRET_KEY=<secret key for tokens>
+WORKER_SECRET=<secret key for reverse proxy>
 ```
 
 7. After deployment is complete, note down the URL.
 
 #### For Koyeb
 
-1. Select **Create App → Deploy from Git Repository** on the Koyeb dashboard.
+1. In the Koyeb dashboard, select **Create App → Deploy from Git Repository**.
 2. Select the repository and set the **Service Type** to Web Service.
-3. Set the Build/Start Command similar to Render.
-4. Configure environment variables.
+3. Set the Build/Start Commands similar to Render.
+4. Set environment variables.
 5. After deployment is complete, note down the URL.
 
 ### 2. Configure Cloudflare Workers
 
 1. Use `src/worker.js` as is.
-2. Configure Workers environment variables:
+2. Set Workers environment variables.
 
 ```env
-TARGET_URL=<Render/Koyeb application backend URL>
-WORKER_SECRET=<WORKER_SECRET same as the application backend>
+TARGET_URL=<URL of the main application on Render/Koyeb>
+WORKER_SECRET=<same secret key as the main application>
 ```
 
 3. Deploy.
 
 ### 3. Access
 
-Access the application via the Cloudflare Workers URL.
+Please access the application via the Cloudflare Workers URL.
 
 ---
 
@@ -112,7 +112,7 @@ Access the application via the Cloudflare Workers URL.
 
 ## Bug Reports & Feedback
 
-For bugs or feature requests, please **create an issue** or contact us at *Yosshy_123@proton.me*.
+For bugs or feature requests, please create an **Issue** or contact us at *Yosshy_123@proton.me*.
 
 ---
 
