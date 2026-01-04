@@ -4,7 +4,9 @@
 
 ---
 
-KAeRU Log is a lightweight chat application built using Node.js.
+KAeRU Log is a lightweight chat application built with Node.js.  
+This app **must be accessed via Cloudflare Workers**.  
+The actual server runs on Render, Koyeb, or a similar hosting service, while Workers acts as a reverse proxy.
 
 ---
 
@@ -33,78 +35,87 @@ KAeRU Log is a lightweight chat application built using Node.js.
 
 ---
 
-## Operating Environment and Setup
+## Environment and Setup
 
-This application runs in an environment where Node.js (v22 or later recommended) is installed.
+Node.js (v22 or higher recommended) is required for dependency management.  
 
-### 1. Clone the Repository
-```bash
-git clone https://github.com/Yosshy-123/KAeRU-Log.git
-cd KAeRU-Log
-```
+The app runs in the following setup:
 
-### 2. Install Dependencies
+1. **App server**: Hosted on Render, Koyeb, or similar Node.js hosting  
+2. **Cloudflare Workers**: `src/worker.js` is used to proxy all requests  
 
-```bash
-npm install
-```
+### 1. Deploy the App Server
 
-### 3. Set Environment Variables
+Deploy the repository to Render or Koyeb.  
+Set the environment variables in `.env`:
 
-Create a `.env` file in the project root and add the following:
-
-```env
+```.env
 REDIS_URL=redis://<host>:<port>
 
-# Optional (Recommended)
-ADMIN_PASS=<administrator password>
-SECRET_KEY=<secret key for token>
-WORKER_SECRET=<secret key identical to worker.js>
+# Optional (recommended)
+ADMIN_PASS=<admin password>
+SECRET_KEY=<token secret key>
+WORKER_SECRET=<must match the key in worker.js>
 ```
 
-`REDIS_URL` **must be defined**.
+- `REDIS_URL` is **required**  
+- `WORKER_SECRET` is used for authentication with Cloudflare Workers  
+
+The app server URL will later be set as `TARGET_URL` in Workers.
 
 ---
 
-## How to Start
+### 2. Configure Cloudflare Workers
 
-After configuring `.env`, start the server using the following command:
+1. Use the `src/worker.js` file.  
+2. Set the following environment variables in Cloudflare:
+
+```.env
+TARGET_URL=<URL of the app server on Render/Koyeb>
+WORKER_SECRET=<same as .env key>
+```
+
+3. Deploy the Worker using `wrangler`:
 
 ```bash
-node server.js
+wrangler publish
 ```
+
+All app requests will now go through the Workers proxy.
 
 ---
 
-## Demo
+## Access
 
-You can see a demo of the application's functionality here:
+Use the Cloudflare Workers URL to access the app:
 
 [https://kaeru-log.yosshy-123.workers.dev/](https://kaeru-log.yosshy-123.workers.dev/)
 
 ---
 
-## Article
+## Articles
 
-You can read an introductory article about KAeRU Log here:
+Read the introduction article about KAeRU Log:
 
-[https://qiita.com/Yosshy_123/items/fcb7b4115145975f77ff](https://qiita.com/Yosshy_123/items/fcb7b4115145975f77ff)
-
----
-
-## Bug Reports and Feedback
-
-For bugs or feature requests, please create an **Issue** or contact us at *Yosshy_123@proton.me*.
+[https://qiita.com/Yosshy_123/items/fa7289905f2fca60e450](https://qiita.com/Yosshy_123/items/fa7289905f2fca60e450)
 
 ---
 
-## LICENSE
+## Bug Reports & Feedback
 
-This project is released under the **MIT LICENSE**.
+Report issues via **GitHub Issues** or contact *Yosshy_123@proton.me*.
 
 ---
 
-## Deploy
+## License
+
+This project is licensed under the **MIT License**.
+
+---
+
+## Deployment
+
+Deploy the app server easily with the following buttons:
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Yosshy-123/KAeRU-Log.git)
 
