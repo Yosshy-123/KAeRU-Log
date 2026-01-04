@@ -67,11 +67,13 @@ WORKER_SECRET=<worker.js と同一のキー>
 
 ---
 
-## 4. アプリ本体をデプロイ
+## デプロイ
+
+### 1. アプリ本体をデプロイ
 
 Render または Koyeb を使用してアプリ本体をデプロイします。
 
-### Render の場合
+#### Render の場合
 
 1. Render ダッシュボードで **New → Web Service** を選択  
 2. GitHub リポジトリとして `KAeRU-Log` を選択  
@@ -81,7 +83,7 @@ Render または Koyeb を使用してアプリ本体をデプロイします。
 6. 環境変数を設定 (上記の `.env` の内容と同じ)  
 7. デプロイ完了後、URL を控えておく
 
-### Koyeb の場合
+#### Koyeb の場合
 
 1. Koyeb ダッシュボードで **Create App → Deploy from Git Repository** を選択  
 2. リポジトリを選択し、**Service Type** を Web Service に設定  
@@ -89,9 +91,7 @@ Render または Koyeb を使用してアプリ本体をデプロイします。
 4. 環境変数を設定  
 5. デプロイ完了後、URL を控えておく
 
----
-
-## 5. Cloudflare Workers を設定
+### 2. Cloudflare Workers を設定
 
 1. `src/worker.js` をそのまま使用  
 2. Workers 環境変数を設定：
@@ -103,39 +103,35 @@ WORKER_SECRET=<アプリ本体と同じ WORKER_SECRET>
 
 3. デプロイ  
 
----
-
-## 6. アクセス
+### アクセス
 
 Cloudflare Workers の URL からアクセスしてください。
 
 ---
 
-## 7. デモ
+## デモ
 
 [https://kaeru-log.yosshy-123.workers.dev/](https://kaeru-log.yosshy-123.workers.dev/)
 
 ---
 
-## 8. 記事
+## 記事
 
 [KAeRU Log 紹介記事 (Qiita)](https://qiita.com/Yosshy_123/items/fa7289905f2fca60e450)
 
 ---
 
-## 9. バグ報告・フィードバック
+## バグ報告・フィードバック
 
 不具合や改善リクエストは **Issue の作成** または *Yosshy_123@proton.me* までご連絡ください。
 
 ---
 
-## 10. ライセンス
+## ライセンス
 
 このプロジェクトは **MIT ライセンス** に基づいて提供されています。
 
 ---
-
-## デプロイ
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Yosshy-123/KAeRU-Log.git)
 
