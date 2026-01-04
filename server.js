@@ -348,6 +348,7 @@ io.on('connection', socket => {
 });
 
 // -------------------- SPA対応 --------------------
+app.use(express.static(`${__dirname}/public`));
 app.get(/^\/(?!api\/).*/, (req,res) => {
     res.sendFile(`${__dirname}/public/index.html`);
 });
