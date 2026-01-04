@@ -4,9 +4,11 @@
 
 ---
 
-KAeRU Log is a lightweight chat application built with Node.js.  
-This app **must be accessed via Cloudflare Workers**.  
-The actual server runs on Render, Koyeb, or a similar hosting service, while Workers acts as a reverse proxy.
+KAeRU Log is a lightweight chat application built with Node.js.
+This application **must be accessed through Cloudflare Workers**.
+
+- The application itself is hosted on Render or Koyeb.
+- Cloudflare Workers act as a reverse proxy to relay requests.
 
 ---
 
@@ -37,85 +39,103 @@ The actual server runs on Render, Koyeb, or a similar hosting service, while Wor
 
 ## Environment and Setup
 
-Node.js (v22 or higher recommended) is required for dependency management.  
+This application runs in an environment with Node.js installed (v22 or later recommended).
 
-The app runs in the following setup:
-
-1. **App server**: Hosted on Render, Koyeb, or similar Node.js hosting  
-2. **Cloudflare Workers**: `src/worker.js` is used to proxy all requests  
-
-### 1. Deploy the App Server
-
-Deploy the repository to Render or Koyeb.  
-Set the environment variables in `.env`:
-
-```.env
-REDIS_URL=redis://<host>:<port>
-
-# Optional (recommended)
-ADMIN_PASS=<admin password>
-SECRET_KEY=<token secret key>
-WORKER_SECRET=<must match the key in worker.js>
-```
-
-- `REDIS_URL` is **required**  
-- `WORKER_SECRET` is used for authentication with Cloudflare Workers  
-
-The app server URL will later be set as `TARGET_URL` in Workers.
-
----
-
-### 2. Configure Cloudflare Workers
-
-1. Use the `src/worker.js` file.  
-2. Set the following environment variables in Cloudflare:
-
-```.env
-TARGET_URL=<URL of the app server on Render/Koyeb>
-WORKER_SECRET=<same as .env key>
-```
-
-3. Deploy the Worker using `wrangler`:
+### 1. Clone the Repository
 
 ```bash
-wrangler publish
+git clone https://github.com/Yosshy-123/KAeRU-Log.git
+cd KAeRU-Log
 ```
 
-All app requests will now go through the Workers proxy.
+### 2. Install Dependency Packages
+
+```bash
+npm install
+```
+
+### 3. Set Environment Variables
+
+Create a `.env` file in the project root and add the following:
+
+```env
+REDIS_URL=redis://<host>:<port>
+ADMIN_PASS=<administrator password>
+SECRET_KEY=<secret key for token>
+WORKER_SECRET=<key identical to worker.js>
+```
 
 ---
 
-## Access
+## 4. Deploy the Application
 
-Use the Cloudflare Workers URL to access the app:
+Deploy the application itself using Render or Koyeb.
+
+### For Render
+
+1. Select **New → Web Service** on the Render dashboard.
+2. Select `KAeRU-Log` as the GitHub repository.
+3. Set **Environment** to Node (v22+).
+4. Set **Build Command** to `npm install`.
+5. Set **Start Command** to `node server.js`.
+6. Configure environment variables (same as the contents of `.env` above).
+7. After deployment is complete, note down the URL.
+
+### For Koyeb
+
+1. Select **Create App → Deploy from Git Repository** on the Koyeb dashboard.
+2. Select the repository and set **Service Type** to Web Service.
+3. Configure Build/Start Commands similarly to Render.
+4. Configure environment variables.
+5. After deployment is complete, note down the URL.
+
+---
+
+## 5. Configure Cloudflare Workers
+
+1. Use `src/worker.js` as is.
+2. Set Workers environment variables:
+
+```env
+TARGET_URL=<application URL on Render/Koyeb>
+WORKER_SECRET=<WORKER_SECRET identical to the application>
+```
+
+3. Deploy.
+
+---
+
+## 6. Access
+
+Access the application via the Cloudflare Workers URL.
+
+---
+
+## 7. Demo
 
 [https://kaeru-log.yosshy-123.workers.dev/](https://kaeru-log.yosshy-123.workers.dev/)
 
 ---
 
-## Articles
+## 8. Articles
 
-Read the introduction article about KAeRU Log:
-
-[https://qiita.com/Yosshy_123/items/fa7289905f2fca60e450](https://qiita.com/Yosshy_123/items/fa7289905f2fca60e450)
+[Introduction to KAeRU Log (Qiita)](https://qiita.com/Yosshy_123/items/fa7289905f2fca60e450)
 
 ---
 
-## Bug Reports & Feedback
+## 9. Bug Reports & Feedback
 
-Report issues via **GitHub Issues** or contact *Yosshy_123@proton.me*.
-
----
-
-## License
-
-This project is licensed under the **MIT License**.
+For bugs or feature requests, please create an **Issue** or contact *Yosshy_123@proton.me*.
 
 ---
 
-## Deployment
+## 10. License
 
-Deploy the app server easily with the following buttons:
+This project is provided under the **MIT License**.
+
+---
+
+## Deploy
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Yosshy-123/KAeRU-Log.git)
 
