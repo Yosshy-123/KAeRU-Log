@@ -31,6 +31,7 @@ This application **must always be accessed via Cloudflare Workers**.
 ├─ src
 │  └─ worker.js
 ├─ server.js
+├─ no-cf-server.js
 ├─ package.json
 └─ LICENSE
 ```
