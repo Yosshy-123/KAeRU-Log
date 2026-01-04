@@ -5,7 +5,8 @@ const { Server: SocketIOServer } = require('socket.io');
 const crypto = require('crypto');
 const Redis = require('ioredis');
 const cron = require('node-cron');
-require('dotenv').config();
+
+try { require('dotenv').config(); } catch { console.warn('dotenv not found, using default values'); }
 
 // -------------------- 環境変数 --------------------
 const PORT = process.env.PORT || 3000;
@@ -20,41 +21,57 @@ if (!REDIS_URL) {
 }
 
 // -------------------- Redis --------------------
-const redis = new Redis(REDIS_URL);
-redis.on('connect', () => console.log('Redis connected'));
-redis.on('error', (err) => console.error('Redis error', err));
+const redisClient = new Redis(REDIS_URL);
+redisClient.on('connect', () => console.log('Redis connected'));
+redisClient.on('error', (err) => console.error('Redis error', err));
 
-// -------------------- Express & Socket.IO --------------------
-const app = express();
-app.use(express.json({ limit: '100kb' }));
-
-const server = http.createServer(app);
-const io = new SocketIOServer(server, { cors: { origin: '*' } });
-
-// -------------------- ヘルパー --------------------
+// -------------------- ヘルパー関数 --------------------
 function isFromCloudflare(headers) {
-    return headers['cf-ray'] && headers['cf-connecting-ip'] && headers['cf-visitor'];
-}
-
-function formatJST(date) {
-    const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
-    return `${jst.getUTCFullYear()}/${String(jst.getUTCMonth()+1).padStart(2,'0')}/${String(jst.getUTCDate()).padStart(2,'0')} ${String(jst.getUTCHours()).padStart(2,'0')}:${String(jst.getUTCMinutes()).padStart(2,'0')}`;
-}
-
-function formatJSTLog(date) {
-    const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
-    return `${jst.getUTCFullYear()}/${String(jst.getUTCMonth()+1).padStart(2,'0')}/${String(jst.getUTCDate()).padStart(2,'0')} ${String(jst.getUTCHours()).padStart(2,'0')}:${String(jst.getUTCMinutes()).padStart(2,'0')}:${String(jst.getUTCSeconds()).padStart(2,'0')}`;
+    return typeof headers['cf-ray'] === 'string' &&
+           typeof headers['cf-connecting-ip'] === 'string' &&
+           typeof headers['cf-visitor'] === 'string';
 }
 
 function escapeHTML(str = '') {
-    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+    return str.replace(/&/g,'&amp;')
+              .replace(/</g,'&lt;')
+              .replace(/>/g,'&gt;')
+              .replace(/"/g,'&quot;')
+              .replace(/'/g,'&#039;');
 }
 
-function logUserAction(clientId, action, extra={}) {
-    const time = formatJSTLog(new Date());
+function formatJSTTime(date) {
+    const jst = new Date(date.getTime() + 9*60*60*1000);
+    const yyyy = jst.getUTCFullYear();
+    const mm = String(jst.getUTCMonth()+1).padStart(2,'0');
+    const dd = String(jst.getUTCDate()).padStart(2,'0');
+    const hh = String(jst.getUTCHours()).padStart(2,'0');
+    const min = String(jst.getUTCMinutes()).padStart(2,'0');
+    return `${yyyy}/${mm}/${dd} ${hh}:${min}`;
+}
+
+function formatJSTTimeLog(date) {
+    const jst = new Date(date.getTime() + 9*60*60*1000);
+    const yyyy = jst.getUTCFullYear();
+    const mm = String(jst.getUTCMonth()+1).padStart(2,'0');
+    const dd = String(jst.getUTCDate()).padStart(2,'0');
+    const hh = String(jst.getUTCHours()).padStart(2,'0');
+    const min = String(jst.getUTCMinutes()).padStart(2,'0');
+    const ss = String(jst.getUTCSeconds()).padStart(2,'0');
+    return `${yyyy}/${mm}/${dd} ${hh}:${min}:${ss}`;
+}
+
+function logUserAction(clientId, action, extra = {}) {
+    const time = formatJSTTimeLog(new Date());
     const username = extra.username ? ` [Username:${extra.username}]` : '';
-    const extraStr = Object.keys(extra).length ? ` ${JSON.stringify(extra)}` : '';
+    const info = { ...extra };
+    delete info.username;
+    const extraStr = Object.keys(info).length ? ` ${JSON.stringify(info)}` : '';
     console.log(`[${time}] [User:${clientId}]${username} Action: ${action}${extraStr}`);
+}
+
+function sendNotification(target, message, type='info') {
+    target.emit('notify', { message, type });
 }
 
 function createSystemMessage(htmlMessage) {
@@ -70,133 +87,282 @@ function createAuthToken(clientId) {
 
 async function validateAuthToken(token) {
     if (!token) return null;
-    const [clientId, timestampStr, signature] = token.split('.');
-    if (!clientId || !timestampStr || !signature) return null;
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+
+    const [clientId, timestampStr, signature] = parts;
+    const timestamp = Number(timestampStr);
+    if (!timestamp) return null;
+
     const hmac = crypto.createHmac('sha256', SECRET_KEY);
-    hmac.update(`${clientId}.${timestampStr}`);
-    if (hmac.digest('hex') !== signature) return null;
-    const stored = await redis.get(`token:${clientId}`);
-    return stored === token ? clientId : null;
+    hmac.update(`${clientId}.${timestamp}`);
+    const expectedSignature = hmac.digest('hex');
+    if (expectedSignature !== signature) return null;
+
+    const storedToken = await redisClient.get(`token:${clientId}`);
+    if (storedToken !== token) return null;
+
+    return clientId;
 }
 
-// -------------------- Middleware --------------------
-io.use(async (socket, next) => {
+// -------------------- Express & Socket.IO --------------------
+const app = express();
+app.use(express.json({ limit:'100kb' }));
+
+app.set('trust proxy', () => true);
+
+const httpServer = http.createServer(app);
+const io = new SocketIOServer(httpServer, { cors:{ origin:'*' } });
+
+// -------------------- Socket.IO 認証 --------------------
+io.use((socket, next) => {
     const headers = socket.handshake.headers;
-    if (!isFromCloudflare(headers) || headers['x-worker-secret'] !== WORKER_SECRET) return next(new Error('Forbidden'));
+    if (!isFromCloudflare(headers)) return next(new Error('Forbidden (Not Cloudflare)'));
+    if (headers['x-worker-secret'] !== WORKER_SECRET) return next(new Error('Forbidden'));
     next();
 });
 
+// -------------------- Express Middleware --------------------
 app.use((req, res, next) => {
-    const h = req.headers;
-    if (!isFromCloudflare(h) || h['x-worker-secret'] !== WORKER_SECRET || h['user-agent'] !== 'cf-worker-kaeru-log') {
-        return res.status(403).send('Forbidden');
-    }
+    if (!isFromCloudflare(req.headers)) return res.status(403).send('Forbidden (Not Cloudflare)');
+    if (req.headers['x-worker-secret'] !== WORKER_SECRET) return res.status(403).send('Forbidden');
+    if (req.headers['user-agent'] !== 'cf-worker-kaeru-log') return res.status(403).send('Forbidden (Invalid UA)');
     next();
 });
 
-// -------------------- Redis 月次リセット --------------------
+// -------------------- 月次Redisリセット --------------------
 async function monthlyRedisReset(io) {
     const now = new Date();
-    const jstMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
-    const savedMonth = await redis.get('system:current_month');
-    if (savedMonth === jstMonth) return;
+    const jstNow = new Date(now.getTime() + 9*60*60*1000);
+    const currentMonth = `${jstNow.getFullYear()}-${String(jstNow.getMonth()+1).padStart(2,'0')}`;
 
-    const lockKey = 'system:reset_lock';
-    const locked = await redis.set(lockKey, '1', 'NX', 'EX', 30);
-    if (!locked) return;
+    try {
+        const savedMonth = await redisClient.get('system:current_month');
+        if (savedMonth === currentMonth) return;
 
-    console.log('[Redis] Month changed, flushing DB...');
-    const keys = await redis.keys('messages:*');
-    const roomIds = keys.map(k => k.replace('messages:',''));
-    await redis.flushdb();
-    await redis.set('system:current_month', jstMonth);
+        const lockKey = 'system:reset_lock';
+        const locked = await redisClient.set(lockKey, '1', 'NX', 'EX', 30);
+        if (!locked) return;
 
-    const msg = createSystemMessage('<strong>メンテナンスのためデータベースがリセットされました</strong>');
-    roomIds.forEach(id => io.to(id).emit('newMessage', msg));
-    console.log('[Redis] Flushdb completed');
+        console.log('[Redis] Month changed, flushdb start');
+
+        const keys = await redisClient.keys('messages:*');
+        const targetRoomIds = keys.map(k => k.replace('messages:',''));
+
+        await redisClient.flushdb();
+        await redisClient.set('system:current_month', currentMonth);
+
+        const systemMessage = createSystemMessage('<strong>メンテナンスのためデータベースがリセットされました</strong>');
+
+        for (const roomId of targetRoomIds) {
+            io.to(roomId).emit('newMessage', {
+                username: systemMessage.username,
+                message: systemMessage.message,
+                time: systemMessage.time,
+                seed: systemMessage.seed
+            });
+        }
+
+        console.log('[Redis] Flushdb completed');
+    } catch (err) {
+        console.error('[Redis] Monthly reset failed', err);
+    }
 }
 
 // -------------------- API --------------------
 app.get('/api/messages/:roomId', async (req,res) => {
-    const roomId = req.params.roomId;
-    if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return res.status(400).json({ error:'invalid roomId' });
+    try {
+        const roomId = req.params.roomId;
+        if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return res.status(400).json({ error:'invalid roomId' });
 
-    const raw = await redis.lrange(`messages:${roomId}`, 0, -1);
-    const messages = raw.map(m => JSON.parse(m));
-    res.json(messages);
+        const rawMessages = await redisClient.lrange(`messages:${roomId}`, 0, -1);
+        const messages = rawMessages.map(m => {
+            const parsed = JSON.parse(m);
+            return { username:parsed.username, message:parsed.message, time:parsed.time, seed:parsed.seed };
+        });
+
+        res.json(messages);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error:'Redis error' });
+    }
 });
 
 app.post('/api/messages', async (req,res) => {
     const { username, message, token, seed, roomId } = req.body;
-    if (!username || !message || !token || !seed || !roomId) return res.status(400).json({ error:'Invalid data' });
+
+    if (!roomId || !username || !message || !token || !seed) return res.status(400).json({ error:'Invalid data' });
     if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return res.status(400).json({ error:'invalid roomId' });
+    if (username.length === 0 || username.length > 24) return res.status(400).json({ error:'Username length invalid' });
+    if (message.length === 0 || message.length > 800) return res.status(400).json({ error:'Message length invalid' });
 
     const clientId = await validateAuthToken(token);
     if (!clientId) return res.status(403).json({ error:'Invalid token' });
 
-    const storedMsg = { username: escapeHTML(username), message: escapeHTML(message), time: formatJST(new Date()), clientId, seed };
-    const roomKey = `messages:${roomId}`;
-    const lua = `redis.call('RPUSH', KEYS[1], ARGV[1]); redis.call('LTRIM', KEYS[1], -100, -1); return 1`;
-    await redis.eval(lua, 1, roomKey, JSON.stringify(storedMsg));
-    io.to(roomId).emit('newMessage', storedMsg);
-    logUserAction(clientId,'sendMessage',{roomId, username});
-    res.json({ ok:true });
+    const MESSAGE_RATE_LIMIT_MS = 1000;
+    const REPEAT_LIMIT = 3;
+    const MUTE_DURATION_SEC = 30;
+
+    const muteKey = `msg:mute:${clientId}`;
+    if (await redisClient.exists(muteKey)) return res.status(429).json({ error:'Muted due to repeated messages' });
+
+    const rateKey = `ratelimit:msg:${clientId}`;
+    const lastSent = await redisClient.get(rateKey);
+    const now = Date.now();
+    if (lastSent && now - Number(lastSent) < MESSAGE_RATE_LIMIT_MS) return res.status(429).json({ error:'Please wait before sending next message' });
+    await redisClient.set(rateKey, now, 'PX', MESSAGE_RATE_LIMIT_MS);
+
+    // --- スパム・ミュート判定 ---
+    const lastMessageKey = `msg:last_message:${clientId}`;
+    const lastTimeKey = `msg:last_time:${clientId}`;
+    const repeatIntervalKey = `msg:repeat_interval_count:${clientId}`;
+
+    const lastMessage = await redisClient.get(lastMessageKey);
+    const lastTime = await redisClient.get(lastTimeKey);
+    let intervalCount = Number(await redisClient.get(repeatIntervalKey)) || 0;
+
+    if (lastMessage === message && lastTime) {
+        const interval = now - Number(lastTime);
+        const lastInterval = Number(await redisClient.get(`msg:last_interval:${clientId}`)) || 0;
+
+        if (Math.abs(interval - lastInterval) < 250) {
+            intervalCount++;
+            await redisClient.set(repeatIntervalKey, intervalCount, 'EX', MUTE_DURATION_SEC);
+            if (intervalCount >= 3) {
+                await redisClient.set(`msg:mute:${clientId}`, '1', 'EX', MUTE_DURATION_SEC);
+                await redisClient.del(repeatIntervalKey);
+                io.to(clientId).emit('notify', { message:`スパムを検知したため${MUTE_DURATION_SEC}秒間ミュートされました`, type:'warning' });
+                return res.status(429).json({ error:'Muted' });
+            }
+        } else {
+            intervalCount = 1;
+            await redisClient.set(repeatIntervalKey, intervalCount, 'EX', MUTE_DURATION_SEC);
+        }
+
+        await redisClient.set(`msg:last_interval:${clientId}`, interval, 'EX', MUTE_DURATION_SEC);
+    } else {
+        await redisClient.set(repeatIntervalKey, 1, 'EX', MUTE_DURATION_SEC);
+    }
+
+    await redisClient.set(lastMessageKey, message, 'EX', MUTE_DURATION_SEC);
+    await redisClient.set(lastTimeKey, now, 'EX', MUTE_DURATION_SEC);
+
+    const storedMessage = { username: escapeHTML(username), message: escapeHTML(message), time: formatJSTTime(new Date()), clientId, seed };
+
+    try {
+        const roomKey = `messages:${roomId}`;
+        const luaScript = `
+            redis.call('RPUSH', KEYS[1], ARGV[1])
+            redis.call('LTRIM', KEYS[1], -100, -1)
+            return 1
+        `;
+        await redisClient.eval(luaScript, 1, roomKey, JSON.stringify(storedMessage));
+
+        io.to(roomId).emit('newMessage', storedMessage);
+        logUserAction(clientId, 'sendMessage', { roomId, username: storedMessage.username, message: storedMessage.message });
+
+        res.json({ ok:true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error:'Redis error' });
+    }
+});
+
+// -------------------- 管理API --------------------
+app.post('/api/clear', async (req,res) => {
+    const { password, roomId, token } = req.body;
+    if (password !== ADMIN_PASS) return res.status(403).json({ error:'Unauthorized' });
+
+    const clientId = await validateAuthToken(token);
+    if (!clientId) return res.status(403).json({ error:'Invalid token' });
+
+    const now = Date.now();
+    const rateKey = `ratelimit:clear:${clientId}`;
+    const last = await redisClient.get(rateKey);
+    if (last && now - Number(last) < 30000) return res.status(429).json({ error:'削除には30秒以上間隔をあけてください' });
+    await redisClient.set(rateKey, now, 'PX', 60000);
+
+    if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return res.status(400).json({ error:'invalid roomId' });
+
+    const username = (await redisClient.get(`username:${clientId}`)) || 'unknown';
+    await redisClient.del(`messages:${roomId}`);
+    io.to(roomId).emit('clearMessages');
+    sendNotification(io.to(roomId),'全メッセージ削除されました','warning');
+    logUserAction(clientId, 'clearMessages', { roomId, username });
+    res.json({ message:'全メッセージ削除しました' });
 });
 
 // -------------------- Socket.IO --------------------
 io.on('connection', socket => {
     socket.on('authenticate', async ({ token, username }) => {
+        const now = Date.now();
         const ip = socket.handshake.headers['cf-connecting-ip'];
-        if (!ip) return socket.disconnect(true);
+        if (!ip || !isFromCloudflare(socket.handshake.headers)) return socket.disconnect(true);
 
         let clientId = token ? await validateAuthToken(token) : null;
+        let newToken = null;
+        socket.data = socket.data || {};
+
         if (!clientId) {
+            const reissueKey = `ratelimit:reissue:${ip}`;
+            const last = await redisClient.get(reissueKey);
+            if (last && now - Number(last) < 30000) { socket.emit('authRequired'); return; }
+
             clientId = crypto.randomUUID();
-            token = createAuthToken(clientId);
-            await redis.set(`token:${clientId}`, token, 'EX', 86400);
-            socket.emit('assignToken', token);
+            newToken = createAuthToken(clientId);
+            await redisClient.set(`token:${clientId}`, newToken, 'EX', 86400);
+            await redisClient.set(reissueKey, now, 'PX', 30000);
+            socket.emit('assignToken', newToken);
         }
 
-        socket.data = { clientId, username: escapeHTML(username) };
-        await redis.set(`username:${clientId}`, socket.data.username, 'EX', 86400);
-        socket.join(clientId);
+        socket.data.clientId = clientId;
+        socket.data.username = username ? escapeHTML(username) : '';
+        await redisClient.set(`username:${clientId}`, socket.data.username, 'EX', 86400);
         socket.emit('authenticated');
+        socket.join(clientId);
     });
 
     socket.on('joinRoom', ({ roomId }) => {
-        if (!socket.data?.clientId) return socket.disconnect(true);
-        if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return;
+        if (!socket.data.clientId) return socket.disconnect(true);
+        if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return;
 
         if (socket.data.roomId) socket.leave(socket.data.roomId);
         socket.join(roomId);
         socket.data.roomId = roomId;
 
-        logUserAction(socket.data.clientId,'joinRoom',{roomId, username: socket.data.username});
-        const count = io.sockets.adapter.rooms.get(roomId)?.size || 0;
-        io.to(roomId).emit('roomUserCount', count);
-        socket.emit('joinedRoom',{roomId});
+        logUserAction(socket.data.clientId,'joinRoom',{ roomId, username: socket.data.username });
+
+        const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
+        io.to(roomId).emit('roomUserCount', roomSize);
+        socket.emit('joinedRoom', { roomId });
     });
 
     socket.on('disconnecting', () => {
-        const roomId = socket.data?.roomId;
+        const roomId = socket.data.roomId;
         if (roomId) {
-            const count = (io.sockets.adapter.rooms.get(roomId)?.size || 1) - 1;
-            io.to(roomId).emit('roomUserCount', count);
+            const roomSize = (io.sockets.adapter.rooms.get(roomId)?.size || 1) - 1;
+            io.to(roomId).emit('roomUserCount', roomSize);
         }
-        if (socket.data?.clientId) logUserAction(socket.data.clientId,'disconnecting',{roomId, username: socket.data.username});
+        if (socket.data.clientId) logUserAction(socket.data.clientId,'disconnecting',{ roomId, username: socket.data.username });
     });
 });
 
 // -------------------- SPA対応 --------------------
-app.use(express.static(`${__dirname}/public`));
-app.get(/^\/(?!api\/).*/, (req,res) => res.sendFile(`${__dirname}/public/index.html`));
+app.get(/^\/(?!api\/).*/, (req,res) => {
+    res.sendFile(`${__dirname}/public/index.html`);
+});
 
 // -------------------- サーバー起動 --------------------
 (async () => {
     try {
         await monthlyRedisReset(io);
-        cron.schedule('0 0 0 1 * *', async () => await monthlyRedisReset(io), { timezone:'Asia/Tokyo' });
+        cron.schedule('0 0 0 1 * *', async () => {
+            console.log('[Cron] Running monthly Redis reset...');
+            await monthlyRedisReset(io);
+        }, { timezone:'Asia/Tokyo' });
+    } catch (err) {
+        console.error('Monthly reset check failed', err);
     } finally {
-        server.listen(PORT,()=>console.log(`Server running on port ${PORT}`));
+        httpServer.listen(PORT, ()=>console.log(`Server running on port ${PORT}`));
     }
 })();
