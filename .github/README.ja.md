@@ -5,8 +5,10 @@
 ---
 
 KAeRU Log は、Node.js を使って構築した軽量チャットアプリです。  
-このアプリは **必ず Cloudflare Workers を経由してアクセスする** 運用を前提としています。  
-実際のサーバーは Render や Koyeb などでホストされ、Workers がリバースプロキシとして機能します。
+このアプリは **必ず Cloudflare Workers を経由してアクセス** します。
+
+- アプリ本体は Render や Koyeb でホスト
+- Cloudflare Workers がリバースプロキシとしてリクエストを中継
 
 ---
 
@@ -37,79 +39,99 @@ KAeRU Log は、Node.js を使って構築した軽量チャットアプリで�
 
 ## 動作環境とセットアップ
 
-Node.js (v22 以上推奨) がインストールされた環境で動作します。  
+Node.js (v22 以上推奨) がインストールされた環境で動作します。
 
-本アプリは以下の構成で運用されます：
-
-1. **アプリ本体**：Render/Koyeb 等で Node.js サーバーを稼働  
-2. **Cloudflare Workers**：`src/worker.js` を使ってリクエストを必ず経由  
-
-### 1. アプリ本体をデプロイ
-
-Render や Koyeb などのホスティングサービスで、リポジトリをデプロイします。  
-環境変数 `.env` を設定してください：
-
-```.env
-REDIS_URL=redis://<ホスト>:<ポート>
-
-# 任意（推奨）
-ADMIN_PASS=<管理者パスワード>
-SECRET_KEY=<トークン用シークレットキー>
-WORKER_SECRET=<worker.js と同一のシークレットキー>
-```
-
-- `REDIS_URL` は **必ず定義**  
-- `WORKER_SECRET` は Cloudflare Workers との認証用です  
-
-アプリ本体の URL は、後で Workers の `TARGET_URL` として指定します。
-
----
-
-### 2. Cloudflare Workers 側の設定
-
-1. `src/worker.js` を使用します。
-2. `TARGET_URL` と `WORKER_SECRET` を Cloudflare 環境変数に設定：
-
-```.env
-TARGET_URL=<Render/Koyeb 上のアプリ URL>
-WORKER_SECRET=<.env と同一のキー>
-```
-
-3. `wrangler` で Workers をデプロイ：
+### 1. リポジトリをクローン
 
 ```bash
-wrangler publish
+git clone https://github.com/Yosshy-123/KAeRU-Log.git
+cd KAeRU-Log
 ```
 
-これにより、アプリ本体にアクセスするすべてのリクエストは Workers を経由するようになります。
+### 2. 依存パッケージをインストール
+
+```bash
+npm install
+```
+
+### 3. 環境変数を設定
+
+プロジェクトルートに `.env` を作成し、以下を記述します：
+
+```env
+REDIS_URL=redis://<ホスト>:<ポート>
+ADMIN_PASS=<管理者パスワード>
+SECRET_KEY=<トークン用シークレットキー>
+WORKER_SECRET=<worker.js と同一のキー>
+```
 
 ---
 
-## アクセス
+## 4. アプリ本体をデプロイ
 
-Cloudflare Workers 経由の URL でアクセスしてください：
+Render または Koyeb を使用してアプリ本体をデプロイします。
+
+### Render の場合
+
+1. Render ダッシュボードで **New → Web Service** を選択  
+2. GitHub リポジトリとして `KAeRU-Log` を選択  
+3. **Environment** を Node (v22+) に設定  
+4. **Build Command** に `npm install` に設定
+5. **Start Command** に `node server.js` に設定
+6. 環境変数を設定 (上記の `.env` の内容と同じ)  
+7. デプロイ完了後、URL を控えておく
+
+### Koyeb の場合
+
+1. Koyeb ダッシュボードで **Create App → Deploy from Git Repository** を選択  
+2. リポジトリを選択し、**Service Type** を Web Service に設定  
+3. Build / Start Command を Render と同様に設定  
+4. 環境変数を設定  
+5. デプロイ完了後、URL を控えておく
+
+---
+
+## 5. Cloudflare Workers を設定
+
+1. `src/worker.js` をそのまま使用  
+2. Workers 環境変数を設定：
+
+```env
+TARGET_URL=<Render/Koyeb のアプリ本体 URL>
+WORKER_SECRET=<アプリ本体と同じ WORKER_SECRET>
+```
+
+3. デプロイ  
+
+---
+
+## 6. アクセス
+
+Cloudflare Workers の URL からアクセスしてください。
+
+---
+
+## 7. デモ
 
 [https://kaeru-log.yosshy-123.workers.dev/](https://kaeru-log.yosshy-123.workers.dev/)
 
 ---
 
-## 記事
+## 8. 記事
 
-KAeRU Log の紹介記事はこちら：
-
-[https://qiita.com/Yosshy_123/items/fa7289905f2fca60e450](https://qiita.com/Yosshy_123/items/fa7289905f2fca60e450)
+[KAeRU Log 紹介記事 (Qiita)](https://qiita.com/Yosshy_123/items/fa7289905f2fca60e450)
 
 ---
 
-## バグ報告・フィードバック
+## 9. バグ報告・フィードバック
 
 不具合や改善リクエストは **Issue の作成** または *Yosshy_123@proton.me* までご連絡ください。
 
 ---
 
-## ライセンス
+## 10. ライセンス
 
-このプロジェクトは **MIT ライセンス** です。
+このプロジェクトは **MIT ライセンス** に基づいて提供されています。
 
 ---
 
