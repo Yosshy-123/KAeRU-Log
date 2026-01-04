@@ -59,7 +59,7 @@ REDIS_URL=redis://<host>:<port>
 # Optional (Recommended)
 ADMIN_PASS=<administrator password>
 SECRET_KEY=<secret key for token>
-WORKER_SECRET=<secret key for worker>
+WORKER_SECRET=<secret key identical to worker.js>
 ```
 
 `REDIS_URL` **must be defined**.
