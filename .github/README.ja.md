@@ -67,7 +67,7 @@ node server.js
 REDIS_URL=redis://<ホスト>:<ポート>
 ADMIN_PASS=<管理者パスワード>
 SECRET_KEY=<トークン用シークレットキー>
-WORKER_SECRET=<worker.js と同一のキー>
+WORKER_SECRET=<リバースプロキシ用シークレットキー>
 ```
 
 7. デプロイ完了後、URL を控えておく
@@ -87,7 +87,7 @@ WORKER_SECRET=<worker.js と同一のキー>
 
 ```env
 TARGET_URL=<Render/Koyeb のアプリ本体 URL>
-WORKER_SECRET=<アプリ本体と同じ WORKER_SECRET>
+WORKER_SECRET=<アプリ本体と同じシークレットキー>
 ```
 
 3. デプロイ  
