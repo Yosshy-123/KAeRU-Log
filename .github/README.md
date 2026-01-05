@@ -116,9 +116,9 @@ For bugs or feature requests, please create an **Issue** or contact us at *Yossh
 
 ---
 
-## License
+## LICENSE
 
-This project is provided under the **MIT License**.
+This project is provided under the **MIT LICENSE**.
 
 ---
 
