@@ -35,7 +35,7 @@ export default {
 
     let body = null;
     if (['POST', 'PUT', 'PATCH'].includes(request.method.toUpperCase())) {
-      body = await request.clone().arrayBuffer();
+      body = await request.arrayBuffer();
     }
 
     try {
