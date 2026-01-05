@@ -82,7 +82,7 @@ WORKER_SECRET=<リバースプロキシ用シークレットキー>
 
 ### 2. Cloudflare Workers を設定
 
-1. `src/worker.js` をそのまま使用  
+1. `src`ディレクトリの`worker.js` をそのまま使用  
 2. Workers 環境変数を設定
 
 ```env
