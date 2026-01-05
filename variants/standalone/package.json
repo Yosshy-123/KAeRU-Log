@@ -1,7 +1,8 @@
 {
-  "name": "KAeRU Log",
+  "name": "@kaeru-log/standalone",
+  "private": true,
   "version": "1.0.0",
-  "description": "WebSocket Chat App",
+  "description": "WebSocket Chat App (without Cloudflare Workers, without Redis)",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
