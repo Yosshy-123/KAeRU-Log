@@ -1,5 +1,6 @@
 {
-  "name": "KAeRU Log",
+  "name": "@kaeru-log",
+  "private": true,
   "version": "1.0.0",
   "description": "WebSocket Chat App",
   "main": "server.js",
