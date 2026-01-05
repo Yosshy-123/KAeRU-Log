@@ -1,3 +1,4 @@
+// -------------------- モジュール --------------------
 const express = require('express');
 const http = require('http');
 const { Server: SocketIOServer } = require('socket.io');
@@ -11,24 +12,121 @@ try {
     console.warn('dotenv not found, using default values');
 }
 
-/*
-  Render でデプロイするため Redis を使用
-  .env に REDIS_URL を必ず定義すること
-*/
-if (!process.env.REDIS_URL) {
+// -------------------- 環境変数 --------------------
+const PORT = process.env.PORT || 3000;
+const REDIS_URL = process.env.REDIS_URL;
+const SECRET_KEY = process.env.SECRET_KEY || 'supersecretkey1234';
+const ADMIN_PASS = process.env.ADMIN_PASS || 'adminkey1234';
+
+if (!REDIS_URL) {
     console.error('REDIS_URL is not set');
     process.exit(1);
 }
 
-const redisClient = new Redis(process.env.REDIS_URL);
-redisClient.on('connect', function () {
+// -------------------- Redis --------------------
+const redisClient = new Redis(REDIS_URL);
+
+redisClient.on('connect', () => {
     console.log('Redis connected');
 });
-redisClient.on('error', function (err) {
+
+redisClient.on('error', (err) => {
     console.error('Redis error', err);
 });
 
-/* ---------------- 月次Redisリセット ---------------- */
+// -------------------- ヘルパー関数 --------------------
+function escapeHTML(str = '') {
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function formatJSTTime(date) {
+    const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+    const yyyy = jst.getUTCFullYear();
+    const mm = String(jst.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(jst.getUTCDate()).padStart(2, '0');
+    const hh = String(jst.getUTCHours()).padStart(2, '0');
+    const min = String(jst.getUTCMinutes()).padStart(2, '0');
+    return `${yyyy}/${mm}/${dd} ${hh}:${min}`;
+}
+
+function formatJSTTimeLog(date) {
+    const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+    const yyyy = jst.getUTCFullYear();
+    const mm = String(jst.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(jst.getUTCDate()).padStart(2, '0');
+    const hh = String(jst.getUTCHours()).padStart(2, '0');
+    const min = String(jst.getUTCMinutes()).padStart(2, '0');
+    const ss = String(jst.getUTCSeconds()).padStart(2, '0');
+    return `${yyyy}/${mm}/${dd} ${hh}:${min}:${ss}`;
+}
+
+function logUserAction(clientId, action, extra = {}) {
+    const time = formatJSTTimeLog(new Date());
+    const username = extra.username ? ` [Username:${extra.username}]` : '';
+    const info = { ...extra };
+    delete info.username;
+    const extraStr = Object.keys(info).length ? ` ${JSON.stringify(info)}` : '';
+    console.log(`[${time}] [User:${clientId}]${username} Action: ${action}${extraStr}`);
+}
+
+function sendNotification(target, message, type = 'info') {
+    target.emit('notify', { message, type });
+}
+
+function createSystemMessage(htmlMessage) {
+    return {
+        username: 'システム',
+        message: htmlMessage,
+        time: new Date().toISOString(),
+        clientId: 'system',
+        seed: 'system'
+    };
+}
+
+// -------------------- 認証トークン --------------------
+function createAuthToken(clientId) {
+    const timestamp = Date.now();
+    const hmac = crypto.createHmac('sha256', SECRET_KEY);
+    hmac.update(`${clientId}.${timestamp}`);
+    return `${clientId}.${timestamp}.${hmac.digest('hex')}`;
+}
+
+async function validateAuthToken(token) {
+    if (!token) return null;
+
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+
+    const [clientId, timestampStr, signature] = parts;
+    const timestamp = Number(timestampStr);
+    if (!timestamp) return null;
+
+    const hmac = crypto.createHmac('sha256', SECRET_KEY);
+    hmac.update(`${clientId}.${timestamp}`);
+    if (hmac.digest('hex') !== signature) return null;
+
+    const storedToken = await redisClient.get(`token:${clientId}`);
+    if (storedToken !== token) return null;
+
+    return clientId;
+}
+
+// -------------------- Express & Socket.IO --------------------
+const app = express();
+app.set('trust proxy', true);
+
+app.use(express.json());
+app.use(express.static('public'));
+
+const httpServer = http.createServer(app);
+const io = new SocketIOServer(httpServer, { cors: { origin: '*' } });
+
+// -------------------- 月次 Redis リセット --------------------
 async function monthlyRedisReset(io) {
     const now = new Date();
     const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
@@ -38,24 +136,22 @@ async function monthlyRedisReset(io) {
         const savedMonth = await redisClient.get('system:current_month');
         if (savedMonth === currentMonth) return;
 
-        const lockKey = 'system:reset_lock';
-        const locked = await redisClient.set(lockKey, '1', 'NX', 'EX', 30);
+        const locked = await redisClient.set('system:reset_lock', '1', 'NX', 'EX', 30);
         if (!locked) return;
 
         console.log('[Redis] Month changed, flushdb start');
 
         const keys = await redisClient.keys('messages:*');
-        const targetRoomIds = keys.map(k => k.replace('messages:', ''));
+        const roomIds = keys.map(k => k.replace('messages:', ''));
 
         await redisClient.flushdb();
-
         await redisClient.set('system:current_month', currentMonth);
 
         const systemMessage = createSystemMessage(
             '<strong>メンテナンスのためデータベースがリセットされました</strong>'
         );
 
-        for (const roomId of targetRoomIds) {
+        for (const roomId of roomIds) {
             io.to(roomId).emit('newMessage', {
                 username: systemMessage.username,
                 message: systemMessage.message,
@@ -70,139 +166,18 @@ async function monthlyRedisReset(io) {
     }
 }
 
-const app = express();
-app.set('trust proxy', true);
-
-const httpServer = http.createServer(app);
-const io = new SocketIOServer(httpServer, { cors: { origin: '*' } });
-
-app.use(express.static('public'));
-app.use(express.json());
-
-const ADMIN_PASS = process.env.ADMIN_PASS || 'adminkey1234';
-const SECRET_KEY = process.env.SECRET_KEY || 'supersecretkey1234';
-const PORT = process.env.PORT || 3000;
-
-/* ---------------- ログ ---------------- */
-function logUserAction(clientId, action, extra = {}) {
-    const time = formatJSTTimeLog(new Date());
-    const username = extra.username ? ` [Username:${extra.username}]` : '';
-    const info = { ...extra };
-    delete info.username;
-    const extraStr = Object.keys(info).length ? ` ${JSON.stringify(info)}` : '';
-    console.log(`[${time}] [User:${clientId}]${username} Action: ${action}${extraStr}`);
-}
-
-/* ---------------- クライアントへ通知 ---------------- */
-function sendNotification(target, message, type = 'info') {
-    target.emit('notify', { message, type });
-}
-
-/* ---------------- JST表示用時刻フォーマット ---------------- */
-function formatJSTTime(date) {
-    const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
-
-    const yyyy = jst.getUTCFullYear();
-    const mm = String(jst.getUTCMonth() + 1).padStart(2, '0');
-    const dd = String(jst.getUTCDate()).padStart(2, '0');
-    const hh = String(jst.getUTCHours()).padStart(2, '0');
-    const min = String(jst.getUTCMinutes()).padStart(2, '0');
-
-    return `${yyyy}/${mm}/${dd} ${hh}:${min}`;
-}
-
-/* ---------------- ログ用JST表示用時刻フォーマット ---------------- */
-function formatJSTTimeLog(date) {
-    const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
-
-    const yyyy = jst.getUTCFullYear();
-    const mm = String(jst.getUTCMonth() + 1).padStart(2, '0');
-    const dd = String(jst.getUTCDate()).padStart(2, '0');
-    const hh = String(jst.getUTCHours()).padStart(2, '0');
-    const min = String(jst.getUTCMinutes()).padStart(2, '0');
-    const ss = String(jst.getUTCSeconds()).padStart(2, '0');
-
-    return `${yyyy}/${mm}/${dd} ${hh}:${min}:${ss}`;
-}
-
-/* ---------------- 認証トークン生成 ---------------- */
-function createAuthToken(clientId) {
-    const timestamp = Date.now();
-    const data = `${clientId}.${timestamp}`;
-
-    const hmac = crypto.createHmac('sha256', SECRET_KEY);
-    hmac.update(data);
-    const signature = hmac.digest('hex');
-
-    return `${clientId}.${timestamp}.${signature}`;
-}
-
-/* ---------------- トークン検証 ---------------- */
-async function validateAuthToken(token) {
-    if (!token) return null;
-
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-
-    const clientId = parts[0];
-    const timestampStr = parts[1];
-    const signature = parts[2];
-
-    const timestamp = Number(timestampStr);
-    if (!timestamp) return null;
-
-    const data = `${clientId}.${timestamp}`;
-    const hmac = crypto.createHmac('sha256', SECRET_KEY);
-    hmac.update(data);
-    const expectedSignature = hmac.digest('hex');
-
-    if (expectedSignature !== signature) return null;
-
-    const storedToken = await redisClient.get(`token:${clientId}`);
-    if (storedToken !== token) return null;
-
-    return clientId;
-}
-
-/* ---------------- HTMLエスケープ ---------------- */
-function escapeHTML(str) {
-    if (!str) return '';
-    return str
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#039;');
-}
-
-/* ---------------- システムメッセージ生成 ---------------- */
-function createSystemMessage(htmlMessage) {
-    return {
-        username: 'システム',
-        message: htmlMessage,
-        time: new Date().toISOString(),
-        clientId: 'system',
-        seed: 'system'
-    };
-}
-
-/* ---------------- API ---------------- */
-app.get('/api/messages/:roomId', async function (req, res) {
+// -------------------- API --------------------
+app.get('/api/messages/:roomId', async (req, res) => {
     try {
-        const roomId = req.params.roomId;
+        const { roomId } = req.params;
         if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) {
             return res.status(400).json({ error: 'invalid roomId' });
         }
 
-        const rawMessages = await redisClient.lrange(`messages:${roomId}`, 0, -1);
-        const messages = rawMessages.map(function (m) {
-            const parsed = JSON.parse(m);
-            return {
-                username: parsed.username,
-                message: parsed.message,
-                time: parsed.time,
-                seed: parsed.seed
-            };
+        const raw = await redisClient.lrange(`messages:${roomId}`, 0, -1);
+        const messages = raw.map(m => {
+            const p = JSON.parse(m);
+            return { username: p.username, message: p.message, time: p.time, seed: p.seed };
         });
 
         res.json(messages);
@@ -212,67 +187,80 @@ app.get('/api/messages/:roomId', async function (req, res) {
     }
 });
 
-app.post('/api/messages', async function (req, res) {
+app.post('/api/messages', async (req, res) => {
     const { username, message, token, seed, roomId } = req.body;
 
-    if (!roomId) return res.status(400).json({ error: 'roomId required' });
-    if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return res.status(400).json({ error: 'invalid roomId' });
-    if (!username || !message || !token || !seed) return res.status(400).json({ error: 'Invalid data' });
-    if (username.length === 0 || username.length > 24) return res.status(400).json({ error: 'Username length invalid' });
-    if (message.length === 0 || message.length > 800) return res.status(400).json({ error: 'Message length invalid' });
+    if (!roomId || !username || !message || !token || !seed) {
+        return res.status(400).json({ error: 'Invalid data' });
+    }
+
+    if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) {
+        return res.status(400).json({ error: 'invalid roomId' });
+    }
+
+    if (username.length === 0 || username.length > 24) {
+        return res.status(400).json({ error: 'Username length invalid' });
+    }
+
+    if (message.length === 0 || message.length > 800) {
+        return res.status(400).json({ error: 'Message length invalid' });
+    }
 
     const clientId = await validateAuthToken(token);
     if (!clientId) return res.status(403).json({ error: 'Invalid token' });
 
-    const MESSAGE_RATE_LIMIT_MS = 1000; // 1秒に1回
-    const REPEAT_LIMIT = 3;             // 同じメッセージ連続送信回数
-    const MUTE_DURATION_SEC = 30;       // ミュート時間
+    const MESSAGE_RATE_LIMIT_MS = 1000;
+    const MUTE_DURATION_SEC = 30;
 
-    const muteKey = `msg:mute:${clientId}`;
-    if (await redisClient.exists(muteKey)) {
+    if (await redisClient.exists(`msg:mute:${clientId}`)) {
         return res.status(429).json({ error: 'Muted due to repeated messages' });
     }
 
     const rateKey = `ratelimit:msg:${clientId}`;
     const lastSent = await redisClient.get(rateKey);
     const now = Date.now();
+
     if (lastSent && now - Number(lastSent) < MESSAGE_RATE_LIMIT_MS) {
         return res.status(429).json({ error: 'Please wait before sending next message' });
     }
+
     await redisClient.set(rateKey, now, 'PX', MESSAGE_RATE_LIMIT_MS);
 
+    // --- スパム検知 ---
     const lastMessageKey = `msg:last_message:${clientId}`;
     const lastTimeKey = `msg:last_time:${clientId}`;
-    const repeatIntervalKey = `msg:repeat_interval_count:${clientId}`;
+    const repeatKey = `msg:repeat_interval_count:${clientId}`;
 
     const lastMessage = await redisClient.get(lastMessageKey);
     const lastTime = await redisClient.get(lastTimeKey);
-    let intervalCount = Number(await redisClient.get(repeatIntervalKey)) || 0;
+    let count = Number(await redisClient.get(repeatKey)) || 0;
 
     if (lastMessage === message && lastTime) {
         const interval = now - Number(lastTime);
         const lastInterval = Number(await redisClient.get(`msg:last_interval:${clientId}`)) || 0;
 
         if (Math.abs(interval - lastInterval) < 250) {
-            intervalCount++;
-            await redisClient.set(repeatIntervalKey, intervalCount, 'EX', MUTE_DURATION_SEC);
-            if (intervalCount >= 3) {
+            count++;
+            await redisClient.set(repeatKey, count, 'EX', MUTE_DURATION_SEC);
+
+            if (count >= 3) {
                 await redisClient.set(`msg:mute:${clientId}`, '1', 'EX', MUTE_DURATION_SEC);
-                await redisClient.del(repeatIntervalKey);
+                await redisClient.del(repeatKey);
+
                 io.to(clientId).emit('notify', {
                     message: `スパムを検知したため${MUTE_DURATION_SEC}秒間ミュートされました`,
                     type: 'warning'
                 });
+
                 return res.status(429).json({ error: 'Muted' });
             }
         } else {
-            intervalCount = 1;
-            await redisClient.set(repeatIntervalKey, intervalCount, 'EX', MUTE_DURATION_SEC);
+            await redisClient.set(repeatKey, 1, 'EX', MUTE_DURATION_SEC);
         }
 
         await redisClient.set(`msg:last_interval:${clientId}`, interval, 'EX', MUTE_DURATION_SEC);
     } else {
-        await redisClient.set(repeatIntervalKey, 1, 'EX', MUTE_DURATION_SEC);
+        await redisClient.set(repeatKey, 1, 'EX', MUTE_DURATION_SEC);
     }
 
     await redisClient.set(lastMessageKey, message, 'EX', MUTE_DURATION_SEC);
@@ -282,28 +270,28 @@ app.post('/api/messages', async function (req, res) {
         username: escapeHTML(username),
         message: escapeHTML(message),
         time: formatJSTTime(new Date()),
-        clientId: clientId,
-        seed: seed
+        clientId,
+        seed
     };
 
     try {
-        const roomKey = `messages:${roomId}`;
-        const luaScript = `
+        const lua = `
             redis.call('RPUSH', KEYS[1], ARGV[1])
             redis.call('LTRIM', KEYS[1], -100, -1)
             return 1
         `;
-        await redisClient.eval(luaScript, 1, roomKey, JSON.stringify(storedMessage));
+
+        await redisClient.eval(lua, 1, `messages:${roomId}`, JSON.stringify(storedMessage));
 
         io.to(roomId).emit('newMessage', {
             username: storedMessage.username,
             message: storedMessage.message,
             time: storedMessage.time,
-            seed: seed
+            seed
         });
 
         logUserAction(clientId, 'sendMessage', {
-            roomId: roomId,
+            roomId,
             username: storedMessage.username,
             message: storedMessage.message
         });
@@ -315,19 +303,14 @@ app.post('/api/messages', async function (req, res) {
     }
 });
 
-app.post('/api/clear', async function (req, res) {
-    const password = req.body.password;
-    const roomId = req.body.roomId;
-    const token = req.body.token;
+// -------------------- 管理 API --------------------
+app.post('/api/clear', async (req, res) => {
+    const { password, roomId, token } = req.body;
 
-    if (password !== ADMIN_PASS) {
-        return res.status(403).json({ error: 'Unauthorized' });
-    }
+    if (password !== ADMIN_PASS) return res.status(403).json({ error: 'Unauthorized' });
 
     const clientId = await validateAuthToken(token);
-    if (!clientId) {
-        return res.status(403).json({ error: 'Invalid token' });
-    }
+    if (!clientId) return res.status(403).json({ error: 'Invalid token' });
 
     const now = Date.now();
     const rateKey = `ratelimit:clear:${clientId}`;
@@ -339,42 +322,31 @@ app.post('/api/clear', async function (req, res) {
 
     await redisClient.set(rateKey, now, 'PX', 60000);
 
-    try {
-        if (!roomId) return res.status(400).json({ error: 'roomId required' });
-        if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) {
-            return res.status(400).json({ error: 'invalid roomId' });
-        }
-        const username = (await redisClient.get(`username:${clientId}`)) || 'unknown';
-        await redisClient.del(`messages:${roomId}`);
-        io.to(roomId).emit('clearMessages');
-        sendNotification(io.to(roomId), '全メッセージ削除されました', 'warning');
-        logUserAction(clientId, 'clearMessages', {
-            roomId: roomId,
-            username: username
-        });
-        res.json({ message: '全メッセージ削除しました' });
-    } catch (err) {
-        console.error('Redis clear failed', err);
-        res.status(500).json({ error: 'Redis error' });
+    if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) {
+        return res.status(400).json({ error: 'invalid roomId' });
     }
+
+    const username = (await redisClient.get(`username:${clientId}`)) || 'unknown';
+
+    await redisClient.del(`messages:${roomId}`);
+    io.to(roomId).emit('clearMessages');
+    sendNotification(io.to(roomId), '全メッセージ削除されました', 'warning');
+
+    logUserAction(clientId, 'clearMessages', { roomId, username });
+    res.json({ message: '全メッセージ削除しました' });
 });
 
-/* ---------------- Socket.IO ---------------- */
-io.on('connection', function (socket) {
-    socket.on('authenticate', async function (data) {
-        const token = data.token;
-        const username = data.username;
-
+// -------------------- Socket.IO --------------------
+io.on('connection', (socket) => {
+    socket.on('authenticate', async ({ token, username }) => {
         const now = Date.now();
-        const ip =
-            socket.handshake.headers['x-forwarded-for']
-                ? socket.handshake.headers['x-forwarded-for'].split(',')[0].trim()
-                : socket.handshake.address;
+        const ip = socket.handshake.headers['x-forwarded-for']
+            ? socket.handshake.headers['x-forwarded-for'].split(',')[0].trim()
+            : socket.handshake.address;
 
         let clientId = token ? await validateAuthToken(token) : null;
-        let newToken = null;
 
-        socket.data = socket.data || {};
+        socket.data ||= {};
 
         if (!clientId) {
             const reissueKey = `ratelimit:reissue:${ip}`;
@@ -386,9 +358,9 @@ io.on('connection', function (socket) {
             }
 
             clientId = crypto.randomUUID();
-            newToken = createAuthToken(clientId);
+            const newToken = createAuthToken(clientId);
 
-            await redisClient.set(`token:${clientId}`, newToken, 'EX', 60 * 60 * 24);
+            await redisClient.set(`token:${clientId}`, newToken, 'EX', 86400);
             await redisClient.set(reissueKey, now, 'PX', 30000);
 
             socket.emit('assignToken', newToken);
@@ -396,15 +368,13 @@ io.on('connection', function (socket) {
 
         socket.data.clientId = clientId;
         socket.data.username = username ? escapeHTML(username) : '';
-        await redisClient.set(`username:${clientId}`, socket.data.username, 'EX', 60 * 60 * 24);
+        await redisClient.set(`username:${clientId}`, socket.data.username, 'EX', 86400);
 
         socket.emit('authenticated');
         socket.join(clientId);
     });
 
-    socket.on('joinRoom', function (data) {
-        const roomId = data.roomId;
-
+    socket.on('joinRoom', ({ roomId }) => {
         if (!socket.data.clientId) {
             socket.emit('authRequired');
             return;
@@ -412,58 +382,55 @@ io.on('connection', function (socket) {
 
         if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return;
 
-        if (socket.data.roomId) {
-            socket.leave(socket.data.roomId);
-        }
+        if (socket.data.roomId) socket.leave(socket.data.roomId);
 
         socket.join(roomId);
         socket.data.roomId = roomId;
 
         logUserAction(socket.data.clientId, 'joinRoom', {
-            roomId: roomId,
+            roomId,
             username: socket.data.username
         });
 
-        const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
-        io.to(roomId).emit('roomUserCount', roomSize);
+        const size = io.sockets.adapter.rooms.get(roomId)?.size || 0;
+        io.to(roomId).emit('roomUserCount', size);
 
-        socket.emit('joinedRoom', { roomId: roomId });
+        socket.emit('joinedRoom', { roomId });
     });
 
-    socket.on('disconnecting', function () {
+    socket.on('disconnecting', () => {
         const roomId = socket.data.roomId;
         if (roomId) {
-            const roomSize = (io.sockets.adapter.rooms.get(roomId)?.size || 1) - 1;
-            io.to(roomId).emit('roomUserCount', roomSize);
+            const size = (io.sockets.adapter.rooms.get(roomId)?.size || 1) - 1;
+            io.to(roomId).emit('roomUserCount', size);
         }
 
         if (socket.data.clientId) {
             logUserAction(socket.data.clientId, 'disconnecting', {
-                roomId: roomId,
+                roomId,
                 username: socket.data.username
             });
         }
     });
 });
 
-app.get('*', function (req, res) {
+// -------------------- SPA 対応 --------------------
+app.get('*', (req, res) => {
     res.sendFile(`${__dirname}/public/index.html`);
 });
 
-/* ---------------- サーバー起動 ---------------- */
-(async function () {
+// -------------------- サーバー起動 --------------------
+(async () => {
     try {
         await monthlyRedisReset(io);
         cron.schedule('0 0 0 1 * *', async () => {
             console.log('[Cron] Running monthly Redis reset...');
             await monthlyRedisReset(io);
-        }, {
-            timezone: 'Asia/Tokyo'
-        });
+        }, { timezone: 'Asia/Tokyo' });
     } catch (err) {
         console.error('Monthly reset check failed', err);
     } finally {
-        httpServer.listen(PORT, function () {
+        httpServer.listen(PORT, () => {
             console.log(`Server running on port ${PORT}`);
         });
     }
