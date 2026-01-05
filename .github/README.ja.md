@@ -30,6 +30,9 @@ KAeRU Log は、Node.js を使って構築した軽量チャットアプリで�
 │  └─ favicon-96x96.png
 ├─ src
 │  └─ worker.js
+├─ no-redis
+│  ├─ server.js
+│  └─ package.json
 ├─ server.js
 ├─ no-cf-server.js
 ├─ package.json
