@@ -126,7 +126,6 @@ io.use((socket, next) => {
 app.use((req, res, next) => {
     if (!isFromCloudflare(req.headers)) return res.status(403).send('Forbidden (Not Cloudflare)');
     if (req.headers['x-worker-secret'] !== WORKER_SECRET) return res.status(403).send('Forbidden');
-    if (req.headers['user-agent'] !== 'cf-worker-kaeru-log') return res.status(403).send('Forbidden (Invalid UA)');
     next();
 });
 
