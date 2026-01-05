@@ -32,7 +32,6 @@ export default {
     }
 
     newHeaders.set('x-worker-secret', WORKER_SECRET);
-    newHeaders.set('user-agent', 'cf-worker-kaeru-log');
 
     let body = null;
     if (['POST', 'PUT', 'PATCH'].includes(request.method.toUpperCase())) {
