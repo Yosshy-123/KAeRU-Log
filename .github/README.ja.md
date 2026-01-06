@@ -39,7 +39,8 @@ KAeRU Log は、Node.js を使って構築した軽量チャットアプリで�
 │     └─ package.json
 ├─ server.js
 ├─ package.json
-└─ LICENSE
+├─ LICENSE
+└─ render.yaml
 ```
 
 ---
