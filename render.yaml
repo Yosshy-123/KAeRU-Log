@@ -7,6 +7,8 @@ services:
     branch: main
     region: oregon
     autoDeploy: true
+    buildCommand: npm install
+    startCommand: npm start
     envVars:
       - key: REDIS_URL
         value: ""
