@@ -6,19 +6,6 @@
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Yosshy-123/KAeRU-Log.git)
 
-> ## 注意: Redis のメモリ削除ポリシーについて
->
-> Render のデフォルト設定では、Redis の Maxmemory Policy を YAML で変更することはできません。
-> KAeRU Log では Redis に全データを保持する必要があります。そのため、デプロイ後に Render ダッシュボードから以下の設定を必ず行ってください。
->
-> 1. Render ダッシュボードにログインします。
-> 2. `kaeru-log-redis` のサービスを開きます。
-> 3. 「Settings」に移動します。
-> 4. `Maxmemory Policy` を `noeviction` に設定します。
-> 5. 設定を保存します。
->
-> この設定を行わない場合、Redis のメモリ上限に達したときにデータが削除され、KAeRU Log が正しく動作しなくなる可能性があります。
-
 ---
 
 KAeRU Log は、Node.js を使って構築した軽量チャットアプリです。  
