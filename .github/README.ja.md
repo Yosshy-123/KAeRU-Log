@@ -4,10 +4,27 @@
 
 ---
 
-KAeRU Log は、Node.js を使って構築した軽量チャットアプリです。  
-このアプリは **必ず Cloudflare Workers を経由してアクセス** します。
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Yosshy-123/KAeRU-Log.git)
 
-* アプリ本体は Render や Koyeb でホストします。
+> ## 注意：Redis のメモリ削除ポリシーについて
+>
+> Render のデフォルト設定では、Redis の Maxmemory Policy を YAML で変更することはできません。
+> KAeRU Log では Redis に全データを保持する必要があります。そのため、デプロイ後に Render ダッシュボードから以下の設定を必ず行ってください。
+>
+> 1. Render ダッシュボードにログインします。
+> 2. `kaeru-log-redis` のサービスを開きます。
+> 3. 「Settings」に移動します。
+> 4. `Maxmemory Policy` を `noeviction` に設定します。
+> 5. 設定を保存します。
+>
+> この設定を行わない場合、Redis のメモリ上限に達したときにデータが削除され、KAeRU Log が正しく動作しなくなる可能性があります。
+
+---
+
+KAeRU Log は、Node.js を使って構築した軽量チャットアプリです。  
+このアプリは **通常は Cloudflare Workers を経由してアクセス** します。
+
+* アプリ本体は Render でホストします。
 * Cloudflare Workers がリバースプロキシとしてリクエストを中継する役割を担います。
 
 ---
@@ -49,9 +66,7 @@ KAeRU Log は、Node.js を使って構築した軽量チャットアプリで�
 
 ### 1. アプリ本体をデプロイ
 
-Render または Koyeb を使用してアプリ本体をデプロイします。
-
-#### Render の場合
+Render を使用してアプリ本体をデプロイします。
 
 1. Render ダッシュボードで **New** → **Web Service** を選択します。
 2. GitHub リポジトリとして `KAeRU-Log` を選択します。
@@ -71,7 +86,7 @@ npm start
 6. 環境変数を設定します。
 
 ```env
-REDIS_URL=redis://<ホスト>:<ポート>
+REDIS_URL=<Redis の URL>
 ADMIN_PASS=<管理者パスワード>
 SECRET_KEY=<トークン用シークレットキー>
 WORKER_SECRET=<リバースプロキシ用シークレットキー>
@@ -79,21 +94,13 @@ WORKER_SECRET=<リバースプロキシ用シークレットキー>
 
 7. デプロイ完了後、URL を控えておきます。
 
-#### Koyeb の場合
-
-1. Koyeb ダッシュボードで **Create App** → **Deploy from Git Repository** を選択します。
-2. リポジトリを選択し、**Service Type** を Web Service に設定します。
-3. Build / Start Command を Render と同様に設定します。
-4. 環境変数を設定します。
-5. デプロイ完了後、URL を控えておきます。
-
 ### 2. Cloudflare Workers を設定
 
 1. `src`ディレクトリの`worker.js` をそのまま使用します。
 2. Workers 環境変数を設定します。
 
 ```env
-TARGET_URL=<Render/Koyeb のアプリ本体 URL>
+TARGET_URL=<Render のアプリ本体 URL>
 WORKER_SECRET=<アプリ本体と同じシークレットキー>
 ```
 
@@ -143,11 +150,3 @@ Cloudflare Workers の URL からアクセスしてください。
 ## ライセンス
 
 このプロジェクトは **MIT ライセンス** に基づいて提供されています。
-
----
-
-## デプロイ
-
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Yosshy-123/KAeRU-Log.git)
-
-[![Deploy to Koyeb](https://www.koyeb.com/static/images/deploy/button.svg)](https://app.koyeb.com/deploy?type=git&repository=github.com/Yosshy-123/KAeRU-Log.git)
