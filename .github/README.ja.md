@@ -104,7 +104,7 @@ Cloudflare Workers の URL からアクセスしてください。
 
 ---
 
-## Variants ディレクトリについて
+## `Variants` ディレクトリについて
 
 `variants` ディレクトリには、環境や依存関係が異なる複数のサーバー実装が格納されています。  
 各バリアントには独自の `server.js` と `package.json` があり、用途に応じて使い分けます。
