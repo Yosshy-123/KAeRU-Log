@@ -64,7 +64,7 @@ npm install
 5. **Start Command** を設定します。
 
 ```bash
-node server.js
+npm start
 ```
 
 6. 環境変数を設定します。
