@@ -19,7 +19,6 @@ services:
       - key: NODE_ENV
         value: "production"
 
-  - type: pserv
+  - type: keyvalue
     name: kaeru-log-redis
-    env: redis
-    plan: starter-redis
+    plan: free
