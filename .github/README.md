@@ -4,11 +4,28 @@
 
 ---
 
-KAeRU Log is a lightweight chat application built using Node.js.
-This application **always accesses through Cloudflare Workers**.
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Yosshy-123/KAeRU-Log.git)
 
-* The main application is hosted on Render or Koyeb.
-* Cloudflare Workers acts as a reverse proxy to relay requests.
+> ## Attention: Regarding Redis Eviction Policy
+>
+> By default, Render does not allow modifying the Redis Maxmemory Policy via YAML.
+> KAeRU Log requires all data to be stored in Redis. Therefore, after deployment, please ensure you set the following configuration from the Render dashboard:
+>
+> 1. Log in to the Render dashboard.
+> 2. Open the `kaeru-log-redis` service.
+> 3. Navigate to "Settings".
+> 4. Set the `Maxmemory Policy` to `noeviction`.
+> 5. Save the settings.
+>
+> If this setting is not applied, data may be deleted when Redis reaches its memory limit, potentially causing KAeRU Log to malfunction.
+
+---
+
+KAeRU Log is a lightweight chat application built with Node.js.
+This application is **typically accessed via Cloudflare Workers**.
+
+* The application itself is hosted on Render.
+* Cloudflare Workers act as a reverse proxy, relaying requests.
 
 ---
 
@@ -49,20 +66,18 @@ This application **always accesses through Cloudflare Workers**.
 
 ### 1. Deploy the Main Application
 
-Deploy the main application using Render or Koyeb.
-
-#### For Render
+Deploy the main application using Render.
 
 1. In the Render dashboard, select **New** → **Web Service**.
 2. Select `KAeRU-Log` as the GitHub repository.
 3. Set the **Environment** to Node (v22+).
-4. Set the **Build Command**.
+4. Configure the **Build Command**.
 
 ```bash
 npm install
 ```
 
-5. Set the **Start Command**.
+5. Configure the **Start Command**.
 
 ```bash
 npm start
@@ -71,54 +86,46 @@ npm start
 6. Set the environment variables.
 
 ```env
-REDIS_URL=redis://<host>:<port>
-ADMIN_PASS=<administrator password>
-SECRET_KEY=<secret key for tokens>
-WORKER_SECRET=<secret key for reverse proxy>
+REDIS_URL=<Redis URL>
+ADMIN_PASS=<Administrator Password>
+SECRET_KEY=<Secret key for tokens>
+WORKER_SECRET=<Secret key for reverse proxy>
 ```
 
 7. After deployment is complete, note down the URL.
 
-#### For Koyeb
-
-1. In the Koyeb dashboard, select **Create App** → **Deploy from Git Repository**.
-2. Select the repository and set the **Service Type** to Web Service.
-3. Set the Build / Start Command similarly to Render.
-4. Set the environment variables.
-5. After deployment is complete, note down the URL.
-
 ### 2. Configure Cloudflare Workers
 
-1. Use `worker.js` in the `src` directory as is.
+1. Use `worker.js` from the `src` directory as is.
 2. Set the Workers environment variables.
 
 ```env
-TARGET_URL=<URL of the main application on Render/Koyeb>
-WORKER_SECRET=<secret key same as the main application>
+TARGET_URL=<Render Main Application URL>
+WORKER_SECRET=<Same secret key as the main application>
 ```
 
 3. Deploy.
 
 ### 3. Access
 
-Please access via the Cloudflare Workers URL.
+Access the application via the Cloudflare Workers URL.
 
 ---
 
-## About the `variants` Directory
+## About the `Variants` Directory
 
 The `variants` directory contains multiple server implementations with different environments and dependencies.
-Each variant has its own `server.js` and `package.json`, and can be used according to its purpose.
+Each variant has its own `server.js` and `package.json`, allowing for use depending on the purpose.
 
 ### Features of Each Variant
 
 | Variant Name | Cloudflare Workers | Redis | Description |
-|--------------|--------------------|-------|-------------|
-| `standalone` | ❌                  | ❌      | A server that does not use `Redis` or `Cloudflare Workers`. |
-| `redis-only` | ❌                  | ✅      | A server that uses `Redis` but not `Cloudflare Workers`. |
+|--------------|-----------------|-------|-------------|
+| `standalone` | ❌               | ❌     | A server that uses neither `Redis` nor `Cloudflare Workers`. |
+| `redis-only` | ❌               | ✅     | A server that uses `Redis` but not `Cloudflare Workers`. |
 
-* In a production environment, the root `server.js` is used, and the configuration utilizes `Cloudflare Workers` and `Redis` as standard.
-* For testing and debugging purposes with fewer dependencies, it is convenient to use `standalone` or `redis-only`.
+* In production environments, the root `server.js` is used, with a configuration leveraging both `Cloudflare Workers` and `Redis`.
+* The `standalone` and `redis-only` variants are useful for testing or debugging purposes where fewer dependencies are desired.
 
 ---
 
@@ -128,7 +135,7 @@ Each variant has its own `server.js` and `package.json`, and can be used accordi
 
 ---
 
-## Articles
+## Article
 
 [Introduction to KAeRU Log (Qiita)](https://qiita.com/Yosshy_123/items/fa7289905f2fca60e450)
 
@@ -136,18 +143,10 @@ Each variant has its own `server.js` and `package.json`, and can be used accordi
 
 ## Bug Reports & Feedback
 
-For bugs or improvement requests, please **create an Issue** or contact us at *Yosshy_123@proton.me*.
+For bug reports or feature requests, please **create an issue** or contact us at *Yosshy_123@proton.me*.
 
 ---
 
 ## LICENSE
 
 This project is provided under the **MIT LICENSE**.
-
----
-
-## Deploy
-
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Yosshy-123/KAeRU-Log.git)
-
-[![Deploy to Koyeb](https://www.koyeb.com/static/images/deploy/button.svg)](https://app.koyeb.com/deploy?type=git&repository=github.com/Yosshy-123/KAeRU-Log.git)
