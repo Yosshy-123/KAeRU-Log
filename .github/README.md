@@ -6,19 +6,6 @@
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Yosshy-123/KAeRU-Log.git)
 
-> ## Attention: Regarding Redis Eviction Policy
->
-> By default, Render does not allow modifying the Redis Maxmemory Policy via YAML.
-> KAeRU Log requires all data to be stored in Redis. Therefore, after deployment, please ensure you set the following configuration from the Render dashboard:
->
-> 1. Log in to the Render dashboard.
-> 2. Open the `kaeru-log-redis` service.
-> 3. Navigate to "Settings".
-> 4. Set the `Maxmemory Policy` to `noeviction`.
-> 5. Save the settings.
->
-> If this setting is not applied, data may be deleted when Redis reaches its memory limit, potentially causing KAeRU Log to malfunction.
-
 ---
 
 KAeRU Log is a lightweight chat application built with Node.js.
