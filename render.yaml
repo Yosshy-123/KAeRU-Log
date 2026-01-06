@@ -8,11 +8,11 @@ services:
     region: oregon
     autoDeploy: true
     envVars:
-      REDIS_URL:
-        fromService:
-          type: pserv
-          name: kaeru-log-redis
-          property: connectionString
+      REDIS_URL: ""
+      ADMIN_PASS: ""
+      SECRET_KEY: ""
+      WORKER_SECRET: ""
+      NODE_ENV: "production"
 
   - type: pserv
     name: kaeru-log-redis
