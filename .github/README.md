@@ -39,7 +39,8 @@ This application **always accesses through Cloudflare Workers**.
 │     └─ package.json
 ├─ server.js
 ├─ package.json
-└─ LICENSE
+├─ LICENSE
+└─ render.yaml
 ```
 
 ---
