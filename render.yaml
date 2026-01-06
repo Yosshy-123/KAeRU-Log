@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: kaeru-log
+    env: node
+    plan: free
+    repo: https://github.com/Yosshy-123/KAeRU-Log.git
+    branch: main
+    region: oregon
+    autoDeploy: true
+    envVars:
+      REDIS_URL:
+        fromService:
+          type: pserv
+          name: kaeru-log-redis
+          property: connectionString
+
+  - type: pserv
+    name: kaeru-log-redis
+    env: redis
+    plan: starter-redis
+    maxmemoryPolicy: noeviction
