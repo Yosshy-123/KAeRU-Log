@@ -24,3 +24,4 @@ services:
   - type: keyvalue
     name: kaeru-log-redis
     plan: free
+    ipAllowList: []
