@@ -64,7 +64,7 @@ npm install
 5. Set the **Start Command**.
 
 ```bash
-node server.js
+npm start
 ```
 
 6. Set the environment variables.
