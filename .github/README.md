@@ -5,10 +5,10 @@
 ---
 
 KAeRU Log is a lightweight chat application built using Node.js.
-This application **must always be accessed via Cloudflare Workers**.
+This application **always accesses through Cloudflare Workers**.
 
-- The application itself is hosted on Render or Koyeb.
-- Cloudflare Workers acts as a reverse proxy, relaying requests.
+* The main application is hosted on Render or Koyeb.
+* Cloudflare Workers acts as a reverse proxy to relay requests.
 
 ---
 
@@ -46,33 +46,33 @@ This application **must always be accessed via Cloudflare Workers**.
 
 ## Deployment
 
-### 1. Deploy the Application
+### 1. Deploy the Main Application
 
-Deploy the application by using Render or Koyeb.
+Deploy the main application using Render or Koyeb.
 
 #### For Render
 
-1. Select **New → Web Service** on the Render dashboard.
+1. In the Render dashboard, select **New** → **Web Service**.
 2. Select `KAeRU-Log` as the GitHub repository.
-3. Set **Environment** to Node (v22+).
-4. Set the **Build Command**:
+3. Set the **Environment** to Node (v22+).
+4. Set the **Build Command**.
 
 ```bash
 npm install
 ```
 
-5. Set the **Start Command**:
+5. Set the **Start Command**.
 
 ```bash
 node server.js
 ```
 
-6. Set environment variables:
+6. Set the environment variables.
 
 ```env
 REDIS_URL=redis://<host>:<port>
 ADMIN_PASS=<administrator password>
-SECRET_KEY=<secret key for token>
+SECRET_KEY=<secret key for tokens>
 WORKER_SECRET=<secret key for reverse proxy>
 ```
 
@@ -80,31 +80,48 @@ WORKER_SECRET=<secret key for reverse proxy>
 
 #### For Koyeb
 
-1. Select **Create App → Deploy from Git Repository** on the Koyeb dashboard.
+1. In the Koyeb dashboard, select **Create App** → **Deploy from Git Repository**.
 2. Select the repository and set the **Service Type** to Web Service.
-3. Configure Build/Start Commands similar to Render.
-4. Set environment variables.
+3. Set the Build / Start Command similarly to Render.
+4. Set the environment variables.
 5. After deployment is complete, note down the URL.
 
 ### 2. Configure Cloudflare Workers
 
-1. Use `worker.js` from the `src` directory as is.
-2. Set Workers environment variables:
+1. Use `worker.js` in the `src` directory as is.
+2. Set the Workers environment variables.
 
 ```env
-TARGET_URL=<Application URL on Render/Koyeb>
-WORKER_SECRET=<Same secret key as the application>
+TARGET_URL=<URL of the main application on Render/Koyeb>
+WORKER_SECRET=<secret key same as the main application>
 ```
 
 3. Deploy.
 
 ### 3. Access
 
-Please access the application via the Cloudflare Workers URL.
+Please access via the Cloudflare Workers URL.
 
 ---
 
-## Demo
+## About the `variants` Directory
+
+The `variants` directory contains multiple server implementations with different environments and dependencies.
+Each variant has its own `server.js` and `package.json`, and can be used according to its purpose.
+
+### Features of Each Variant
+
+| Variant Name | Cloudflare Workers | Redis | Description |
+|--------------|--------------------|-------|-------------|
+| `standalone` | ❌                  | ❌      | A server that does not use `Redis` or `Cloudflare Workers`. |
+| `redis-only` | ❌                  | ✅      | A server that uses `Redis` but not `Cloudflare Workers`. |
+
+* In a production environment, the root `server.js` is used, and the configuration utilizes `Cloudflare Workers` and `Redis` as standard.
+* For testing and debugging purposes with fewer dependencies, it is convenient to use `standalone` or `redis-only`.
+
+---
+
+## Live Demo
 
 [https://kaeru-log.yosshy-123.workers.dev/](https://kaeru-log.yosshy-123.workers.dev/)
 
@@ -118,7 +135,7 @@ Please access the application via the Cloudflare Workers URL.
 
 ## Bug Reports & Feedback
 
-For issues or improvement requests, please **create an Issue** or contact *Yosshy_123@proton.me*.
+For bugs or improvement requests, please **create an Issue** or contact us at *Yosshy_123@proton.me*.
 
 ---
 
