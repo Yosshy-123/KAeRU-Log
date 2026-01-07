@@ -2,11 +2,8 @@
   <img height="150px" src="logo.png" />
   <h1>KAeRU Log</h1>
   <h3>A lightweight chat application built with Node.js</h3>
-</div>
-
-<p align="center">
   <a href="https://render.com/deploy?repo=https://github.com/Yosshy-123/KAeRU-Log.git"><img height="30px" src="https://render.com/images/deploy-to-render-button.svg" /></a>
-</p>
+</div>
 
 ---
 
