@@ -22,7 +22,7 @@ This application is **typically accessed via Cloudflare Workers**.
 /
 ├─ .github
 │  ├─ README.md
-│  └─ README.ja.md
+│  └─ README.en.md
 ├─ public
 │  ├─ index.html
 │  ├─ main.js
