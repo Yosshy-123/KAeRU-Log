@@ -60,10 +60,11 @@ KAeRU Log では、チャットログや状態管理のために **Redis** を�
 
 #### Render の Redis を使う（推奨）
 
-1. Render ダッシュボードで **New** → **Redis** を選択します。
+1. Render ダッシュボードで **New** → **Key Value** を選択します。
 2. 任意のサービス名を設定します。
-3. リージョンを選択し、プランを選択します（Free / Paid）。
-4. 作成完了後、Redis の **Internal URL** または **Redis URL** を控えます。
+3. **Maxmemory Policy** を **noeviction** に設定します。
+4. リージョンを選択し、プランを選択します。
+5. 作成完了後、Redis の **Internal Key Value URL** を控えておきます。
 
 #### 外部 Redis サービスを使う
 
@@ -79,21 +80,23 @@ KAeRU Log では、チャットログや状態管理のために **Redis** を�
 Render を使用してアプリ本体をデプロイします。
 
 1. Render ダッシュボードで **New** → **Web Service** を選択します。
-2. GitHub リポジトリとして `KAeRU-Log` を選択します。
-3. **Environment** を Node (v22+) に設定します。
-4. **Build Command** を設定します。
+2. GitHub リポジトリとして `https://github.com/Yosshy-123/KAeRU-Log.git` を設定します。
+3. 任意のサービス名を設定します。
+4. リージョンを選択し、プランを選択します。
+5. **Environment** を Node (v22+) に設定します。
+6. **Build Command** を設定します。
 
 ```bash
 npm install
 ```
 
-5. **Start Command** を設定します。
+7. **Start Command** を設定します。
 
 ```bash
 npm start
 ```
 
-6. 環境変数を設定します。
+8. 環境変数を設定します。
 
 ```env
 REDIS_URL=<Redis の URL>
@@ -102,7 +105,7 @@ SECRET_KEY=<トークン用シークレットキー>
 WORKER_SECRET=<Cloudflare Workers と共有するシークレットキー>
 ```
 
-7. デプロイ完了後、URL を控えておきます。
+9. デプロイ完了後、URL を控えておきます。
 
 ### 3. Cloudflare Workers を設定
 
