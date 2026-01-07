@@ -22,7 +22,7 @@ KAeRU Log は、Node.js を使って構築した軽量チャットアプリで�
 /
 ├─ .github
 │  ├─ README.md
-│  └─ README.ja.md
+│  └─ README.en.md
 ├─ public
 │  ├─ index.html
 │  ├─ main.js
