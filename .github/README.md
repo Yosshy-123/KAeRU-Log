@@ -9,7 +9,7 @@
 ---
 
 KAeRU Log は、Node.js を使って構築した軽量チャットアプリです。  
-このアプリは **通常、 Cloudflare Workers を経由してアクセス** されます。
+このアプリは通常、 **Cloudflare Workers を経由してアクセス** されます。
 
 * アプリ本体は Render でホストします。
 * Cloudflare Workers がリバースプロキシとしてリクエストを中継します。
