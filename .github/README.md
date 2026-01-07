@@ -1,10 +1,16 @@
-# KAeRU Log
+<div align="center">
+  <img height="150px" src="logo.png">
+  <h1>KAeRU Log</h1>
+  <h3>Node.js を使って構築した軽量チャットアプリ</h3>
+</div>
 
-[Read in English (discouraged)](README.en.md)
+<p align="center">
+  <a href="https://render.com/deploy?repo=https://github.com/Yosshy-123/KAeRU-Log.git"><img height="30px" src="https://render.com/images/deploy-to-render-button.svg"><img></a>
+</p>
 
 ---
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Yosshy-123/KAeRU-Log.git)
+[Read in English (discouraged)](README.en.md)
 
 ---
 
