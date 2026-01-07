@@ -1,6 +1,6 @@
 # KAeRU Log
 
-[Read in English](README.en.md)
+[Read in English (discouraged)](README.en.md)
 
 ---
 
