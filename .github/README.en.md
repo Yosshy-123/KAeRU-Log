@@ -9,7 +9,7 @@
 ---
 
 KAeRU Log is a lightweight chat application built using Node.js.
-This application is **typically accessed via Cloudflare Workers**.
+This application is typically accessed via **Cloudflare Workers**.
 
 * The application itself is hosted on Render.
 * Cloudflare Workers acts as a reverse proxy to relay requests.
@@ -54,31 +54,31 @@ This application is **typically accessed via Cloudflare Workers**.
 ### 1. Configure Redis
 
 KAeRU Log uses **Redis** for chat logs and state management.
-Redis configuration is mandatory for production environments and the `redis-only` variant.
+Redis configuration is mandatory for the production environment and the `redis-only` variant.
 
-Please set up Redis using one of the following methods:
+Please prepare Redis using one of the following methods:
 
-#### Use Render's Redis (Recommended)
+#### Using Render's Redis (Recommended)
 
-1. On the Render dashboard, select **New** → **Redis**.
-2. Set any service name.
+1. In the Render dashboard, select **New** -> **Redis**.
+2. Set any desired service name.
 3. Select a region and choose a plan (Free / Paid).
-4. After creation, note down the Redis **Internal URL** or **Redis URL**.
+4. After creation is complete, note down the Redis **Internal URL** or **Redis URL**.
 
-#### Use an External Redis Service
+#### Using an External Redis Service
 
 You can also use external services such as:
 
 * [Upstash](https://console.upstash.com/redis)
 * [Redis Cloud](https://cloud.redis.io/#/databases)
 
-In either case, obtain the **Redis connection URL**.
+In either case, obtain the **connection Redis URL**.
 
 ### 2. Deploy the Application
 
-Deploy the main application using Render.
+Deploy the application using Render.
 
-1. On the Render dashboard, select **New** → **Web Service**.
+1. In the Render dashboard, select **New** -> **Web Service**.
 2. Select `KAeRU-Log` as the GitHub repository.
 3. Set the **Environment** to Node (v22+).
 4. Configure the **Build Command**.
@@ -97,7 +97,7 @@ npm start
 
 ```env
 REDIS_URL=<Redis URL>
-ADMIN_PASS=<Administrator Password>
+ADMIN_PASS=<Admin Password>
 SECRET_KEY=<Secret key for tokens>
 WORKER_SECRET=<Secret key to share with Cloudflare Workers>
 ```
@@ -110,8 +110,8 @@ WORKER_SECRET=<Secret key to share with Cloudflare Workers>
 2. Set Workers environment variables.
 
 ```env
-TARGET_URL=<Render Application URL>
-WORKER_SECRET=<Secret key same as the application>
+TARGET_URL=<Render's application URL>
+WORKER_SECRET=<Same secret key as the application>
 ```
 
 3. Deploy.
@@ -125,18 +125,18 @@ Access the application via the Cloudflare Workers URL.
 ## About the `Variants` Directory
 
 The `variants` directory contains multiple server implementations with different environments and dependencies.
-Each variant has its own `server.js` and `package.json`, allowing for selection based on use cases.
+Each variant has its own `server.js` and `package.json`, allowing for flexible usage based on needs.
 
 ### Characteristics of Each Variant
 
-| Variant Name | Cloudflare Workers | Redis | Description |
-|--------------|--------------------|-------|-------------|
-| `standalone` | ❌                 | ❌    | A server that uses neither `Redis` nor `Cloudflare Workers`. |
-| `redis-only` | ❌                 | ✅    | A server that uses `Redis` but not `Cloudflare Workers`. |
+| Variant Name      | Cloudflare Workers | Redis | Description |
+|-------------------|-----------------|-------|-------------|
+| `standalone`      | ❌               | ❌     | A server that uses neither `Redis` nor `Cloudflare Workers`. |
+| `redis-only`      | ❌               | ✅     | A server that uses `Redis` but not `Cloudflare Workers`. |
 
-* The root `server.js` is used in production environments, configured to utilize `Cloudflare Workers` and `Redis`.
-* `standalone` and `redis-only` are convenient for testing or debugging purposes with fewer dependencies.
-* All variants should be executed from the root directory.
+* The root `server.js` is used in the production environment, configured to utilize `Cloudflare Workers` and `Redis`.
+* The `standalone` and `redis-only` variants are convenient for testing or debugging purposes with fewer dependencies.
+* In all cases, execute from the root directory.
 
 ---
 
@@ -154,7 +154,7 @@ Each variant has its own `server.js` and `package.json`, allowing for selection 
 
 ## Bug Reports & Feedback
 
-For bug reports or feature requests, please **create an Issue** or contact *Yosshy_123@proton.me*.
+For bugs or feature requests, please **create an issue** or contact us at *Yosshy_123@proton.me*.
 
 ---
 
