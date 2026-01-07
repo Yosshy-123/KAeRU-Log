@@ -1,11 +1,11 @@
 <div align="center">
-  <img height="150px" src="logo.png">
+  <img height="150px" src="logo.png" />
   <h1>KAeRU Log</h1>
   <h3>Node.js を使って構築した軽量チャットアプリ</h3>
 </div>
 
 <p align="center">
-  <a href="https://render.com/deploy?repo=https://github.com/Yosshy-123/KAeRU-Log.git"><img height="30px" src="https://render.com/images/deploy-to-render-button.svg"><img></a>
+  <a href="https://render.com/deploy?repo=https://github.com/Yosshy-123/KAeRU-Log.git"><img height="30px" src="https://render.com/images/deploy-to-render-button.svg" /></a>
 </p>
 
 ---
