@@ -9,10 +9,10 @@
 ---
 
 KAeRU Log は、Node.js を使って構築した軽量チャットアプリです。  
-このアプリは **通常は Cloudflare Workers を経由してアクセス** します。
+このアプリは **通常、 Cloudflare Workers を経由してアクセス** されます。
 
 * アプリ本体は Render でホストします。
-* Cloudflare Workers がリバースプロキシとしてリクエストを中継する役割を担います。
+* Cloudflare Workers がリバースプロキシとしてリクエストを中継します。
 
 ---
 
@@ -51,7 +51,30 @@ KAeRU Log は、Node.js を使って構築した軽量チャットアプリで�
 
 ## デプロイ
 
-### 1. アプリ本体をデプロイ
+### 1. Redis を設定する
+
+KAeRU Log では、チャットログや状態管理のために **Redis** を使用します。
+本番環境および `redis-only` バリアントでは Redis の設定が必須です。
+
+以下のいずれかの方法で Redis を用意してください。
+
+#### Render の Redis を使う（推奨）
+
+1. Render ダッシュボードで **New** → **Redis** を選択します。
+2. 任意のサービス名を設定します。
+3. リージョンを選択し、プランを選択します（Free / Paid）。
+4. 作成完了後、Redis の **Internal URL** または **Redis URL** を控えます。
+
+#### 外部 Redis サービスを使う
+
+以下のような外部サービスなども利用できます。
+
+* [Upstash](https://console.upstash.com/redis)
+* [Redis Cloud](https://cloud.redis.io/#/databases)
+
+いずれの場合も、**接続用の Redis URL** を取得してください。
+
+### 2. アプリ本体をデプロイ
 
 Render を使用してアプリ本体をデプロイします。
 
@@ -76,12 +99,12 @@ npm start
 REDIS_URL=<Redis の URL>
 ADMIN_PASS=<管理者パスワード>
 SECRET_KEY=<トークン用シークレットキー>
-WORKER_SECRET=<リバースプロキシ用シークレットキー>
+WORKER_SECRET=<Cloudflare Workers と共有するシークレットキー>
 ```
 
 7. デプロイ完了後、URL を控えておきます。
 
-### 2. Cloudflare Workers を設定
+### 3. Cloudflare Workers を設定
 
 1. `src`ディレクトリの`worker.js` をそのまま使用します。
 2. Workers 環境変数を設定します。
@@ -93,7 +116,7 @@ WORKER_SECRET=<アプリ本体と同じシークレットキー>
 
 3. デプロイします。
 
-### 3. アクセス
+### 4. アクセス
 
 Cloudflare Workers の URL からアクセスしてください。
 
@@ -113,6 +136,7 @@ Cloudflare Workers の URL からアクセスしてください。
 
 * 本番環境ではルートの `server.js` を使用し、`Cloudflare Workers` と `Redis` を利用する構成が標準です。
 * 依存関係の少ないテストやデバッグ用途では `standalone` や `redis-only` を利用すると便利です。
+* いずれもルートディレクトリで実行してください。
 
 ---
 
