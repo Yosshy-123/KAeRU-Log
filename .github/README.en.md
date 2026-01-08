@@ -25,16 +25,19 @@ This application is typically **accessed via Cloudflare Workers**.
 /
 ├─ .github
 │  ├─ README.md
-│  └─ README.md.en
+│  └─ README.en.md
 ├─ public
 │  ├─ index.html
-│  ├─ main.js
-│  ├─ socket.io.min.js
-│  ├─ style.css
-│  ├─ logo.png
-│  ├─ favicon-16x16.png
-│  ├─ favicon-32x32.png
-│  └─ favicon-96x96.png
+│  ├─ js
+│  │  ├─ main.js
+│  │  └─ socket.io.min.js
+│  ├─ css
+│  │  └─ style.css
+│  └─ images
+│     ├─ logo.png
+│     ├─ favicon-16x16.png
+│     ├─ favicon-32x32.png
+│     └─ favicon-96x96.png
 ├─ src
 │  └─ worker.js
 ├─ variants
