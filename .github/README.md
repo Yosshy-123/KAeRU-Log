@@ -7,7 +7,7 @@
 
 ---
 
-[Read in English (discouraged)](README.en.md)
+[Read in English](README.en.md)
 
 ---
 
