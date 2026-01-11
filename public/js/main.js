@@ -1,42 +1,31 @@
 (() => {
+	/* ---------- 初期設定 ---------- */
 	const SERVER_URL = window.location.origin.replace(/\/$/, ''); // サーバーのURLを定義
-
 	const path = location.pathname.split('/').filter(Boolean);
 	let roomId = path[1];
 
-	if (path[0] !== 'room' || !roomId) {
-		location.replace('/room/open');
-		return;
-	}
-
-	if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) {
+	if (path[0] !== 'room' || !roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) {
 		location.replace('/room/open');
 		return;
 	}
 
 	const socket = io(SERVER_URL);
 
+	/* ---------- 状態 ---------- */
 	let messages = [];
 	let myToken = localStorage.getItem('chatToken') || '';
 	let myName = localStorage.getItem('chat_username') || '';
 	let mySeed = localStorage.getItem('chat_seed');
+	let isAutoScroll = true;
+	let pendingMessage = null;
+	let isSocketAuthenticated = false;
 
 	if (!mySeed) {
 		mySeed = generateUserSeed(40);
 		localStorage.setItem('chat_seed', mySeed);
 	}
 
-	function generateUserSeed(length) {
-		const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-		let result = '';
-		const array = new Uint32Array(length);
-		crypto.getRandomValues(array);
-		for (let i = 0; i < length; i++) {
-			result += chars[array[i] % chars.length];
-		}
-		return result;
-	}
-
+	/* ---------- DOM要素 ---------- */
 	const elements = {
 		chatContainer: document.querySelector('main'),
 		messageList: document.getElementById('messageList'),
@@ -69,12 +58,25 @@
 		elements.currentUsernameLabel.textContent = myName || '未設定';
 	}
 
-	let isAutoScroll = true;
+	/* ---------- ユーティリティ ---------- */
+	function generateUserSeed(length) {
+		const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+		const array = new Uint32Array(length);
+		crypto.getRandomValues(array);
+
+		let result = '';
+		for (let i = 0; i < length; i++) {
+			result += chars[array[i] % chars.length];
+		}
+		return result;
+	}
 
 	function showToastMessage(text, ms = 1800) {
 		if (!elements.toastNotification) return;
+
 		elements.toastNotification.textContent = text;
 		elements.toastNotification.classList.add('show');
+
 		clearTimeout(showToastMessage._t);
 		showToastMessage._t = setTimeout(() => {
 			elements.toastNotification.classList.remove('show');
@@ -96,17 +98,21 @@
 
 	function getUserInitials(name) {
 		if (!name) return '?';
-		const s = name.trim().split(/\s+/).map(p => p[0] || '').join('').toUpperCase();
-		return s.slice(0, 2);
+		return name
+			.trim()
+			.split(/\s+/)
+			.map(p => p[0] || '')
+			.join('')
+			.toUpperCase()
+			.slice(0, 2);
 	}
 
 	function focusMessageInput(elm = elements.messageTextarea) {
 		if (!elm) return;
+
 		elm.focus();
-		elm.scrollIntoView({
-			behavior: 'smooth',
-			block: 'center'
-		});
+		elm.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
 		if (elm.value !== undefined) {
 			const val = elm.value;
 			elm.value = '';
@@ -114,11 +120,12 @@
 		}
 	}
 
+	/* ---------- メッセージ描画 ---------- */
 	function createMessageElement(msg) {
 		const isSelf = msg.seed === mySeed;
 
 		const wrap = document.createElement('div');
-		wrap.className = 'message-item' + (isSelf ? ' is-self' : '');
+		wrap.className = `message-item${isSelf ? ' is-self' : ''}`;
 
 		const avatar = document.createElement('div');
 		avatar.className = 'message-avatar';
@@ -153,12 +160,12 @@
 		return wrap;
 	}
 
+	/* ---------- API ---------- */
 	async function loadMessageHistory() {
 		try {
 			const res = await fetch(
-				`${SERVER_URL}/api/messages/${encodeURIComponent(roomId)}`, {
-					cache: 'no-store'
-				}
+				`${SERVER_URL}/api/messages/${encodeURIComponent(roomId)}`,
+				{ cache: 'no-store' }
 			);
 			if (!res.ok) throw 0;
 
@@ -166,9 +173,9 @@
 
 			if (elements.messageList) {
 				elements.messageList.innerHTML = '';
-				messages.forEach(msg => {
-					elements.messageList.appendChild(createMessageElement(msg));
-				});
+				messages.forEach(msg =>
+					elements.messageList.appendChild(createMessageElement(msg))
+				);
 			}
 
 			if (isAutoScroll) scrollChatToBottom(false);
@@ -178,17 +185,12 @@
 	}
 
 	async function sendChatMessage() {
-		const text = (elements.messageTextarea && elements.messageTextarea.value || '').trim();
+		const text = (elements.messageTextarea?.value || '').trim();
 		if (!text) return;
 
 		if (!myName) {
-			if (elements.profileModal) elements.profileModal.classList.add('show');
+			elements.profileModal?.classList.add('show');
 			showToastMessage('ユーザー名を設定してください');
-			return;
-		}
-
-		if (!myToken) {
-			showToastMessage('再接続してください');
 			return;
 		}
 
@@ -200,12 +202,21 @@
 			roomId
 		};
 
+		if (!myToken) {
+			if (socket?.connected) {
+				pendingMessage = payload;
+				socket.emit('authenticate', { token: '', username: myName || '' });
+				showToastMessage('トークンを再取得しています...');
+				return;
+			}
+			showToastMessage('再接続してください');
+			return;
+		}
+
 		try {
 			const res = await fetch(`${SERVER_URL}/api/messages`, {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
+				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(payload)
 			});
 
@@ -215,9 +226,16 @@
 				if (res.status === 403) {
 					myToken = '';
 					localStorage.removeItem('chatToken');
-					console.warn('Token invalid, please reconnect.');
+					pendingMessage = payload;
+
+					if (socket?.connected) {
+						socket.emit('authenticate', { token: '', username: myName || '' });
+						showToastMessage('トークンを再取得しています...');
+						return;
+					}
+					showToastMessage('認証エラーのため送信できませんでした');
 				} else {
-					console.warn('HTTP error:', data.error);
+					showToastMessage(data.error || '送信に失敗しました');
 				}
 				return;
 			}
@@ -229,30 +247,32 @@
 		}
 	}
 
+	/* ---------- モーダル ---------- */
 	function openProfileModal() {
 		if (elements.profileNameInput) {
 			elements.profileNameInput.value = myName || '';
 		}
-		if (elements.profileModal) elements.profileModal.classList.add('show');
+		elements.profileModal?.classList.add('show');
 		focusMessageInput(elements.profileNameInput);
 	}
 
 	function closeProfileModal() {
-		if (elements.profileModal) elements.profileModal.classList.remove('show');
+		elements.profileModal?.classList.remove('show');
 	}
 
 	function openAdminModal() {
 		if (elements.adminPasswordInput) elements.adminPasswordInput.value = '';
-		if (elements.adminModal) elements.adminModal.classList.add('show');
+		elements.adminModal?.classList.add('show');
 		focusMessageInput(elements.adminPasswordInput);
 	}
 
 	function closeAdminModal() {
-		if (elements.adminModal) elements.adminModal.classList.remove('show');
+		elements.adminModal?.classList.remove('show');
 	}
 
+	/* ---------- 管理操作 ---------- */
 	async function deleteAllMessages() {
-		const password = elements.adminPasswordInput && elements.adminPasswordInput.value || '';
+		const password = elements.adminPasswordInput?.value || '';
 		if (!password) {
 			showToastMessage('パスワードを入力してください');
 			return;
@@ -261,18 +281,11 @@
 		try {
 			const res = await fetch(`${SERVER_URL}/api/clear`, {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					password,
-					roomId,
-					token: myToken
-				})
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ password, roomId, token: myToken })
 			});
 
 			const data = await res.json().catch(() => ({}));
-
 			if (!res.ok) {
 				showToastMessage(data.error || '削除に失敗しました');
 				return;
@@ -285,6 +298,7 @@
 		}
 	}
 
+	/* ---------- イベント登録 ---------- */
 	if (elements.sendMessageButton) {
 		elements.sendMessageButton.addEventListener('click', sendChatMessage);
 	}
@@ -293,80 +307,54 @@
 		const isMobileLike = window.matchMedia('(max-width: 820px) and (pointer: coarse)').matches;
 
 		elements.messageTextarea.addEventListener('keydown', e => {
-			if (isMobileLike) return;
-			if (e.key === 'Enter' && !e.shiftKey) {
+			if (!isMobileLike && e.key === 'Enter' && !e.shiftKey) {
 				e.preventDefault();
 				sendChatMessage();
 			}
 		});
-
-		if (elements.openProfileButton) {
-			elements.openProfileButton.addEventListener('click', openProfileModal);
-		}
-
-		if (elements.closeProfileButton) {
-			elements.closeProfileButton.addEventListener('click', () => {
-				closeProfileModal();
-				focusMessageInput();
-			});
-		}
-
-		if (elements.saveProfileButton) {
-			elements.saveProfileButton.addEventListener('click', () => {
-				const v = (elements.profileNameInput && elements.profileNameInput.value || '')
-					.trim()
-					.slice(0, 24);
-
-				if (!v) {
-					showToastMessage('ユーザー名は1〜24文字で設定してください');
-					return;
-				}
-
-				myName = v;
-				localStorage.setItem('chat_username', myName);
-				if (elements.currentUsernameLabel) {
-					elements.currentUsernameLabel.textContent = myName;
-				}
-				closeProfileModal();
-				showToastMessage('プロフィールを保存しました');
-				focusMessageInput();
-			});
-		}
-
-		if (elements.openAdminButton) {
-			elements.openAdminButton.addEventListener('click', openAdminModal);
-		}
-
-		if (elements.closeAdminButton) {
-			elements.closeAdminButton.addEventListener('click', () => {
-				closeAdminModal();
-				focusMessageInput();
-			});
-		}
-
-		if (elements.clearMessagesButton) {
-			elements.clearMessagesButton.addEventListener('click', deleteAllMessages);
-		}
-
-		if (elements.chatContainer) {
-			elements.chatContainer.addEventListener('scroll', () => {
-				isAutoScroll = isScrolledToBottom();
-			});
-		}
 	}
 
+	elements.openProfileButton?.addEventListener('click', openProfileModal);
+	elements.closeProfileButton?.addEventListener('click', () => {
+		closeProfileModal();
+		focusMessageInput();
+	});
+
+	elements.saveProfileButton?.addEventListener('click', () => {
+		const v = (elements.profileNameInput?.value || '').trim().slice(0, 24);
+		if (!v) {
+			showToastMessage('ユーザー名は1〜24文字で設定してください');
+			return;
+		}
+		myName = v;
+		localStorage.setItem('chat_username', myName);
+		if (elements.currentUsernameLabel) elements.currentUsernameLabel.textContent = myName;
+		closeProfileModal();
+		showToastMessage('プロフィールを保存しました');
+		focusMessageInput();
+	});
+
+	elements.openAdminButton?.addEventListener('click', openAdminModal);
+	elements.closeAdminButton?.addEventListener('click', () => {
+		closeAdminModal();
+		focusMessageInput();
+	});
+	elements.clearMessagesButton?.addEventListener('click', deleteAllMessages);
+
+	elements.chatContainer?.addEventListener('scroll', () => {
+		isAutoScroll = isScrolledToBottom();
+	});
+
+	/* ---------- Socket.IO ---------- */
 	function joinRoom() {
-		socket.emit('joinRoom', {
-			roomId
-		});
+		socket.emit('joinRoom', { roomId });
 	}
 
 	socket.on('connect', () => {
 		if (elements.connectionText) elements.connectionText.textContent = 'オンライン';
-		if (elements.connectionIndicator) {
-			elements.connectionIndicator.classList.remove('offline');
-			elements.connectionIndicator.classList.add('online');
-		}
+		elements.connectionIndicator?.classList.remove('offline');
+		elements.connectionIndicator?.classList.add('online');
+
 		socket.emit('authenticate', {
 			token: myToken || '',
 			username: myName || ''
@@ -381,27 +369,48 @@
 	});
 
 	socket.on('disconnect', () => {
+		isSocketAuthenticated = false;
 		if (elements.connectionText) elements.connectionText.textContent = '切断';
-		if (elements.connectionIndicator) {
-			elements.connectionIndicator.classList.remove('online');
-			elements.connectionIndicator.classList.add('offline');
-		}
+		elements.connectionIndicator?.classList.remove('online');
+		elements.connectionIndicator?.classList.add('offline');
 	});
 
 	socket.on('assignToken', token => {
 		myToken = token;
 		localStorage.setItem('chatToken', token);
+
+		if (!pendingMessage) return;
+
+		const msgToResend = { ...pendingMessage, token: myToken };
+		pendingMessage = null;
+
+		(async () => {
+			try {
+				const res = await fetch(`${SERVER_URL}/api/messages`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(msgToResend)
+				});
+
+				if (res.ok) {
+					if (elements.messageTextarea) elements.messageTextarea.value = '';
+				} else {
+					const data = await res.json().catch(() => ({}));
+				}
+			} catch (e) {
+				console.error('resend error', e);
+			}
+		})();
 	});
 
 	socket.on('newMessage', msg => {
 		messages.push(msg);
-		if (elements.messageList) {
-			elements.messageList.appendChild(createMessageElement(msg));
-		}
+		elements.messageList?.appendChild(createMessageElement(msg));
 		if (isAutoScroll) scrollChatToBottom(true);
 	});
 
 	socket.on('authenticated', () => {
+		isSocketAuthenticated = true;
 		joinRoom();
 	});
 
@@ -412,17 +421,13 @@
 	});
 
 	socket.on('notify', data => {
-		if (!data) return;
-		const msg = typeof data === 'string' ? data : data.message;
-		if (!msg) return;
-		showToastMessage(msg);
+		const msg = typeof data === 'string' ? data : data?.message;
+		if (msg) showToastMessage(msg);
 	});
 
 	socket.on('roomUserCount', count => {
-		if (typeof count === 'number') {
-			if (elements.onlineUserCount) {
-				elements.onlineUserCount.textContent = `オンライン: ${count}`;
-			}
+		if (typeof count === 'number' && elements.onlineUserCount) {
+			elements.onlineUserCount.textContent = `オンライン: ${count}`;
 		}
 	});
 
@@ -431,29 +436,25 @@
 		focusMessageInput();
 	});
 
+	/* ---------- ルーム移動 ---------- */
 	function changeChatRoom(newRoom) {
-		if (!newRoom || !/^[a-zA-Z0-9_-]{1,32}$/.test(newRoom)) {
+		if (!/^[a-zA-Z0-9_-]{1,32}$/.test(newRoom)) {
 			showToastMessage('ルーム名は英数字・一部記号32文字以内で指定してください');
 			return;
 		}
-
 		if (newRoom === roomId) return;
-
 		location.href = `/room/${encodeURIComponent(newRoom)}`;
 	}
 
-	if (elements.joinRoomButton) {
-		elements.joinRoomButton.addEventListener('click', () => {
-			const newRoom = elements.roomIdInput.value.trim();
-			changeChatRoom(newRoom);
-		});
-	}
+	elements.joinRoomButton?.addEventListener('click', () => {
+		changeChatRoom(elements.roomIdInput.value.trim());
+	});
 
 	if (elements.roomIdInput) {
 		elements.roomIdInput.addEventListener('keydown', e => {
 			if (e.key === 'Enter') {
 				e.preventDefault();
-				if (elements.joinRoomButton) elements.joinRoomButton.click();
+				elements.joinRoomButton?.click();
 			}
 		});
 		elements.roomIdInput.value = roomId;
