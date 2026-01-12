@@ -16,6 +16,9 @@ const PORT = process.env.PORT || 3000;
 const SECRET_KEY = process.env.SECRET_KEY || 'supersecretkey1234';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'adminkey1234';
 
+// -------------------- アプリ設定 --------------------
+const AUTH_TOKEN_MAX_AGE = 24 * 60 * 60 * 1000;
+
 // -------------------- In-Memory Redis --------------------
 class MemoryRedis {
     constructor() {
@@ -166,6 +169,7 @@ async function validateAuthToken(token) {
     const [clientId, timestampStr, signature] = parts;
     const timestamp = Number(timestampStr);
     if (!timestamp) return null;
+    if (Date.now() - timestamp > AUTH_TOKEN_MAX_AGE) return null;
 
     const hmac = crypto.createHmac('sha256', SECRET_KEY);
     hmac.update(`${clientId}.${timestamp}`);
