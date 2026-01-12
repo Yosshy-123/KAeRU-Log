@@ -23,9 +23,6 @@ if (!REDIS_URL) {
     process.exit(1);
 }
 
-// -------------------- アプリ設定 --------------------
-const AUTH_TOKEN_MAX_AGE = 24 * 60 * 60 * 1000;
-
 // -------------------- Redis --------------------
 const redisClient = new Redis(REDIS_URL);
 
@@ -36,6 +33,9 @@ redisClient.on('connect', () => {
 redisClient.on('error', (err) => {
     console.error('Redis error', err);
 });
+
+// -------------------- アプリ設定 --------------------
+const AUTH_TOKEN_MAX_AGE = 24 * 60 * 60 * 1000;
 
 // -------------------- ヘルパー関数 --------------------
 function escapeHTML(str = '') {
