@@ -25,6 +25,9 @@ const redisClient = new Redis(REDIS_URL);
 redisClient.on('connect', () => console.log('Redis connected'));
 redisClient.on('error', (err) => console.error('Redis error', err));
 
+// -------------------- アプリ設定 --------------------
+const AUTH_TOKEN_MAX_AGE = 24 * 60 * 60 * 1000;
+
 // -------------------- ヘルパー関数 --------------------
 function isFromCloudflare(headers) {
     return typeof headers['cf-ray'] === 'string' &&
@@ -93,6 +96,7 @@ async function validateAuthToken(token) {
     const [clientId, timestampStr, signature] = parts;
     const timestamp = Number(timestampStr);
     if (!timestamp) return null;
+    if (Date.now() - timestamp > AUTH_TOKEN_MAX_AGE) return null;
 
     const hmac = crypto.createHmac('sha256', SECRET_KEY);
     hmac.update(`${clientId}.${timestamp}`);
