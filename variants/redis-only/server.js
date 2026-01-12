@@ -23,6 +23,9 @@ if (!REDIS_URL) {
     process.exit(1);
 }
 
+// -------------------- アプリ設定 --------------------
+const AUTH_TOKEN_MAX_AGE = 24 * 60 * 60 * 1000;
+
 // -------------------- Redis --------------------
 const redisClient = new Redis(REDIS_URL);
 
@@ -105,6 +108,7 @@ async function validateAuthToken(token) {
     const [clientId, timestampStr, signature] = parts;
     const timestamp = Number(timestampStr);
     if (!timestamp) return null;
+    if (Date.now() - timestamp > AUTH_TOKEN_MAX_AGE) return null;
 
     const hmac = crypto.createHmac('sha256', SECRET_KEY);
     hmac.update(`${clientId}.${timestamp}`);
