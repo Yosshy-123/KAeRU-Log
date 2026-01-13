@@ -132,11 +132,6 @@ async function requireSocketSession(req, res, next) {
   const clientId = await validateAuthToken(token);
   if (!clientId) return res.status(403).json({ error: 'Invalid token' });
 
-  const online = await redisClient.exists(`session:online:${clientId}`);
-  if (!online) {
-    return res.status(403).json({ error: 'Socket.IO session required' });
-  }
-
   req.clientId = clientId;
   next();
 }
@@ -379,14 +374,6 @@ io.on('connection', (socket) => {
 
     socket.data.clientId = clientId;
 
-    const key = `session:online:${clientId}`;
-    const count = await redisClient.incr(key);
-    if (count === 1) {
-      await redisClient.expire(key, SESSION_TTL_SEC);
-    }
-
-    socket.data.sessionKey = key;
-
     if (typeof username === 'string' && username.length > 0 && username.length <= 24) {
       await redisClient.set(`username:${clientId}`, escapeHTML(username), 'EX', SESSION_TTL_SEC);
     }
@@ -412,22 +399,10 @@ io.on('connection', (socket) => {
     socket.emit('joinedRoom', { roomId });
   });
 
-  socket.on('disconnecting', async () => {
-    const key = socket.data.sessionKey;
-    if (!key) return;
-
-    try {
-      const count = await redisClient.decr(key);
-      if (count <= 0) {
-        await redisClient.del(key);
-      }
-    } catch (e) {
-      console.error('[session] decr failed', e);
-    }
-
+  socket.on('disconnect', async () => {
     const roomId = socket.data.roomId;
     if (roomId) {
-      const roomSize = (io.sockets.adapter.rooms.get(roomId)?.size || 1) - 1;
+      const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
       io.to(roomId).emit('roomUserCount', roomSize);
     }
 
