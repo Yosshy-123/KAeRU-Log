@@ -78,7 +78,7 @@ function sendNotification(target, message, type='info') {
 }
 
 function createSystemMessage(htmlMessage) {
-    return { username:'システム', message:htmlMessage, time:new Date().toISOString(), clientId:'system', seed:'system' };
+    return { username:'システム', message:htmlMessage, time: formatJSTTime(new Date()), clientId:'system', seed:'system' };
 }
 
 function createAuthToken(clientId) {
