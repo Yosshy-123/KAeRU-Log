@@ -147,14 +147,11 @@ async function requireSocketSession(req, res, next) {
 const app = express();
 app.use(express.json({ limit: '100kb' }));
 
-// trust proxy を boolean で設定
 app.set('trust proxy', true);
 
 const httpServer = http.createServer(app);
 const io = new SocketIOServer(httpServer, { cors: { origin: '*' } });
 
-// -------------------- Socket.IO 認証（シンプル） --------------------
-// -------------------- Express Middleware（シンプル） --------------------
 // -------------------- 月次Redisリセット --------------------
 async function monthlyRedisReset(ioInstance) {
   const now = new Date();
