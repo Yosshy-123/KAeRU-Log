@@ -1,37 +1,110 @@
 // -------------------- モジュール --------------------
 const express = require('express');
 const http = require('http');
-const { Server: SocketIOServer } = require('socket.io');
+const { Server } = require('socket.io');
 const crypto = require('crypto');
 const cron = require('node-cron');
 
-try {
-  require('dotenv').config();
-} catch {
-  console.warn('dotenv not found, using default values');
-}
-
 // -------------------- 環境変数 --------------------
 const PORT = process.env.PORT || 3000;
-const SECRET_KEY = process.env.SECRET_KEY || 'supersecretkey1234';
-const ADMIN_PASS = process.env.ADMIN_PASS || 'adminkey1234';
+const SECRET_KEY = process.env.SECRET_KEY || 'supersecretkey';
+const ADMIN_PASS = process.env.ADMIN_PASS || 'adminpass';
 
-// -------------------- アプリ設定 --------------------
-const AUTH_TOKEN_MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours
-const SESSION_TTL_SEC = 60 * 60 * 24; // 24 hours
+// -------------------- InMemoryRedis --------------------
+class InMemoryRedis {
+  constructor() {
+    this.store = new Map();
+    this.timers = new Map();
+  }
 
-// -------------------- インメモリストア --------------------
-const tokenStore = new Map();
-const sessionCounts = new Map();
-const sessionExpiryTimers = new Map();
-const usernameStore = new Map();
-const messagesStore = new Map();
-const simpleKV = new Map();
+  _setExpire(key, ms) {
+    if (this.timers.has(key)) clearTimeout(this.timers.get(key));
+    const timer = setTimeout(() => {
+      this.store.delete(key);
+      this.timers.delete(key);
+    }, ms);
+    this.timers.set(key, timer);
+  }
 
-let systemCurrentMonth = null;
-let resetLock = false;
+  async get(key) {
+    return this.store.has(key) ? this.store.get(key) : null;
+  }
 
-// -------------------- ヘルパー関数 --------------------
+  async set(key, value, mode, ttl) {
+    this.store.set(key, value);
+
+    if (mode === 'EX' && typeof ttl === 'number') {
+      this._setExpire(key, ttl * 1000);
+    } else if (mode === 'PX' && typeof ttl === 'number') {
+      this._setExpire(key, ttl);
+    }
+    return 'OK';
+  }
+
+  async del(key) {
+    this.store.delete(key);
+    if (this.timers.has(key)) {
+      clearTimeout(this.timers.get(key));
+      this.timers.delete(key);
+    }
+    return 1;
+  }
+
+  async exists(key) {
+    return this.store.has(key) ? 1 : 0;
+  }
+
+  async rpush(key, value) {
+    const list = this.store.get(key) || [];
+    list.push(value);
+    this.store.set(key, list);
+    return list.length;
+  }
+
+  async lrange(key, start, stop) {
+    const list = this.store.get(key) || [];
+    const len = list.length;
+
+    const s = start < 0 ? Math.max(len + start, 0) : start;
+    const e = stop < 0 ? len + stop + 1 : Math.min(stop + 1, len);
+
+    if (s >= e) return [];
+    return list.slice(s, e);
+  }
+
+  async ltrim(key, start, stop) {
+    const list = this.store.get(key) || [];
+    const len = list.length;
+
+    const s = start < 0 ? Math.max(len + start, 0) : start;
+    const e = stop < 0 ? len + stop + 1 : Math.min(stop + 1, len);
+
+    this.store.set(key, list.slice(s, e));
+    return 'OK';
+  }
+
+  async keys(pattern) {
+    if (pattern === '*') return [...this.store.keys()];
+    const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+    return [...this.store.keys()].filter((k) => regex.test(k));
+  }
+
+  async flushdb() {
+    this.store.clear();
+    for (const t of this.timers.values()) clearTimeout(t);
+    this.timers.clear();
+    return 'OK';
+  }
+}
+
+const redis = new InMemoryRedis();
+
+// -------------------- 定数 --------------------
+const AUTH_TOKEN_MAX_AGE = 24 * 60 * 60 * 1000;
+const SESSION_TTL_SEC = 60 * 60 * 24;
+const MESSAGE_RATE_LIMIT_MS = 1000;
+
+// -------------------- Utility --------------------
 function escapeHTML(str = '') {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -41,209 +114,168 @@ function escapeHTML(str = '') {
     .replace(/'/g, '&#039;');
 }
 
-function formatJSTTime(date) {
-  const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
-  const yyyy = jst.getUTCFullYear();
-  const mm = String(jst.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(jst.getUTCDate()).padStart(2, '0');
-  const hh = String(jst.getUTCHours()).padStart(2, '0');
-  const min = String(jst.getUTCMinutes()).padStart(2, '0');
-  return `${yyyy}/${mm}/${dd} ${hh}:${min}`;
+function formatJST(date = new Date()) {
+  return new Date(date.getTime() + 9 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 16)
+    .replace('T', ' ');
 }
 
-function formatJSTTimeLog(date) {
-  const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
-  const yyyy = jst.getUTCFullYear();
-  const mm = String(jst.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(jst.getUTCDate()).padStart(2, '0');
-  const hh = String(jst.getUTCHours()).padStart(2, '0');
-  const min = String(jst.getUTCMinutes()).padStart(2, '0');
-  const ss = String(jst.getUTCSeconds()).padStart(2, '0');
-  return `${yyyy}/${mm}/${dd} ${hh}:${min}:${ss}`;
+function validRoomId(roomId) {
+  return /^[a-zA-Z0-9_-]{1,32}$/.test(roomId);
 }
 
-function logUserAction(clientId, action, extra = {}) {
-  const time = formatJSTTimeLog(new Date());
-  const username = extra.username ? ` [Username:${extra.username}]` : '';
-  const info = { ...extra };
-  delete info.username;
-  const extraStr = Object.keys(info).length ? ` ${JSON.stringify(info)}` : '';
-  console.log(`[${time}] [User:${clientId}]${username} Action: ${action}${extraStr}`);
-}
-
-function sendNotification(target, message, type = 'info') {
-  target.emit('notify', { message, type });
-}
-
-function createSystemMessage(htmlMessage) {
-  return {
-    username: 'システム',
-    message: htmlMessage,
-    time: formatJSTTime(new Date()),
-    clientId: 'system',
-    seed: 'system',
-  };
-}
-
+// -------------------- Token --------------------
 function createAuthToken(clientId) {
-  const timestamp = Date.now();
-  const hmac = crypto.createHmac('sha256', SECRET_KEY);
-  hmac.update(`${clientId}.${timestamp}`);
-  return `${clientId}.${timestamp}.${hmac.digest('hex')}`;
+  const ts = Date.now();
+  const sig = crypto
+    .createHmac('sha256', SECRET_KEY)
+    .update(`${clientId}.${ts}`)
+    .digest('hex');
+  return `${clientId}.${ts}.${sig}`;
 }
 
-// -------------------- simpleKV --------------------
-function kvSet(key, value, ttlSec) {
-  if (simpleKV.has(key)) clearTimeout(simpleKV.get(key).timeout);
-  const timeout = ttlSec ? setTimeout(() => simpleKV.delete(key), ttlSec * 1000) : null;
-  simpleKV.set(key, { value, timeout });
-}
-
-function kvGet(key) {
-  const v = simpleKV.get(key);
-  return v ? v.value : null;
-}
-
-function kvDel(key) {
-  if (simpleKV.has(key)) clearTimeout(simpleKV.get(key).timeout);
-  simpleKV.delete(key);
-}
-
-// -------------------- 認証 --------------------
 async function validateAuthToken(token) {
   if (!token) return null;
-  const [clientId, ts, sig] = token.split('.');
-  if (!clientId || !ts || !sig) return null;
+  const [id, ts, sig] = token.split('.');
+  if (!id || !ts || !sig) return null;
   if (Date.now() - Number(ts) > AUTH_TOKEN_MAX_AGE) return null;
 
-  const hmac = crypto.createHmac('sha256', SECRET_KEY);
-  hmac.update(`${clientId}.${ts}`);
-  if (hmac.digest('hex') !== sig) return null;
+  const expected = crypto
+    .createHmac('sha256', SECRET_KEY)
+    .update(`${id}.${ts}`)
+    .digest('hex');
 
-  return tokenStore.get(clientId) === token ? clientId : null;
+  if (expected !== sig) return null;
+  return (await redis.get(`token:${id}`)) === token ? id : null;
 }
 
-function extractTokenFromRequest(req) {
-  return req.body?.token || req.headers.authorization || null;
-}
+// -------------------- Express --------------------
+const app = express();
+app.use(express.json({ limit: '100kb' }));
 
-async function requireSocketSession(req, res, next) {
-  const token = extractTokenFromRequest(req);
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: '*' } });
+
+// -------------------- Middleware --------------------
+async function requireSession(req, res, next) {
+  const token = req.body.token || req.headers.authorization;
   const clientId = await validateAuthToken(token);
-  if (!clientId || !sessionCounts.has(clientId)) return res.status(403).json({ error: 'Invalid session' });
+  if (!clientId) return res.status(403).json({ error: 'Invalid token' });
   req.clientId = clientId;
   next();
 }
 
-// -------------------- Express & Socket.IO --------------------
-const app = express();
-app.use(express.json({ limit: '100kb' }));
-app.set('trust proxy', true);
-
-const httpServer = http.createServer(app);
-const io = new SocketIOServer(httpServer, { cors: { origin: '*' } });
-
-// -------------------- 月次リセット --------------------
-async function monthlyMemoryReset(ioInstance) {
-  const now = new Date();
-  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  const currentMonth = `${jst.getFullYear()}-${String(jst.getMonth() + 1).padStart(2, '0')}`;
-
-  if (systemCurrentMonth === currentMonth || resetLock) return;
-  resetLock = true;
-  setTimeout(() => (resetLock = false), 30000);
-
-  const rooms = [...messagesStore.keys()];
-  messagesStore.clear();
-  systemCurrentMonth = currentMonth;
-
-  const msg = createSystemMessage('<strong>メンテナンスのためデータがリセットされました</strong>');
-  rooms.forEach((r) => ioInstance.to(r).emit('newMessage', msg));
-}
-
 // -------------------- API --------------------
-app.get('/api/messages/:roomId', (req, res) => {
-  const roomId = req.params.roomId;
-  if (!/^[\w-]{1,32}$/.test(roomId)) return res.status(400).json({ error: 'invalid roomId' });
-  res.json((messagesStore.get(roomId) || []).map(({ username, message, time, seed }) => ({ username, message, time, seed })));
+app.get('/api/messages/:roomId', async (req, res) => {
+  const { roomId } = req.params;
+  if (!validRoomId(roomId))
+    return res.status(400).json({ error: 'invalid roomId' });
+
+  const list = await redis.lrange(`messages:${roomId}`, 0, -1);
+  res.json(list.map(JSON.parse));
 });
 
-app.post('/api/messages', requireSocketSession, (req, res) => {
-  const { username, message, seed, roomId } = req.body;
-  if (!roomId || !username || !message || !seed) return res.status(400).json({ error: 'Invalid data' });
+const lastSendMap = new Map();
 
-  const clientId = req.clientId;
-  const now = Date.now();
+app.post('/api/messages', requireSession, async (req, res) => {
+  const { roomId, username, message, seed } = req.body;
 
-  if (kvGet(`msg:mute:${clientId}`)) return res.status(429).json({ error: 'Muted' });
+  if (!validRoomId(roomId))
+    return res.status(400).json({ error: 'invalid roomId' });
 
-  const last = kvGet(`ratelimit:${clientId}`);
-  if (last && now - last < 1000) return res.status(429).json({ error: 'Rate limit' });
-  kvSet(`ratelimit:${clientId}`, now, 1);
+  if (!username || !message || !seed)
+    return res.status(400).json({ error: 'Invalid data' });
 
-  const msg = { username: escapeHTML(username), message: escapeHTML(message), time: formatJSTTime(new Date()), clientId, seed };
-  const list = messagesStore.get(roomId) || [];
-  list.push(msg);
-  if (list.length > 1000) list.splice(0, list.length - 1000);
-  messagesStore.set(roomId, list);
+  const last = lastSendMap.get(req.clientId) || 0;
+  if (Date.now() - last < MESSAGE_RATE_LIMIT_MS)
+    return res.status(429).json({ error: 'Too fast' });
+
+  lastSendMap.set(req.clientId, Date.now());
+
+  const msg = {
+    username: escapeHTML(username),
+    message: escapeHTML(message),
+    time: formatJST(),
+    clientId: req.clientId,
+    seed,
+  };
+
+  await redis.rpush(`messages:${roomId}`, JSON.stringify(msg));
+  await redis.ltrim(`messages:${roomId}`, -1000, -1);
 
   io.to(roomId).emit('newMessage', msg);
-  logUserAction(clientId, 'sendMessage', { roomId, username: msg.username });
   res.json({ ok: true });
 });
 
-// -------------------- 管理API --------------------
-app.post('/api/clear', requireSocketSession, (req, res) => {
-  const { password, roomId } = req.body;
-  if (password !== ADMIN_PASS) return res.status(403).json({ error: 'Unauthorized' });
-  messagesStore.delete(roomId);
-  io.to(roomId).emit('clearMessages');
-  sendNotification(io.to(roomId), '全メッセージ削除されました', 'warning');
+app.post('/api/clear', requireSession, async (req, res) => {
+  if (req.body.password !== ADMIN_PASS)
+    return res.status(403).json({ error: 'Unauthorized' });
+
+  if (!validRoomId(req.body.roomId))
+    return res.status(400).json({ error: 'invalid roomId' });
+
+  await redis.del(`messages:${req.body.roomId}`);
+  io.to(req.body.roomId).emit('clearMessages');
   res.json({ ok: true });
 });
 
 // -------------------- Socket.IO --------------------
 io.on('connection', (socket) => {
-  socket.on('authenticate', ({ token, username } = {}) => {
-    let clientId = token && tokenStore.get(token) ? token : null;
+  socket.on('authenticate', async ({ token, username }) => {
+    let clientId = await validateAuthToken(token);
+
     if (!clientId) {
       clientId = crypto.randomUUID();
-      const t = createAuthToken(clientId);
-      tokenStore.set(clientId, t);
-      socket.emit('assignToken', t);
+      const newToken = createAuthToken(clientId);
+      await redis.set(`token:${clientId}`, newToken, 'EX', 86400);
+      socket.emit('assignToken', newToken);
     }
 
-    sessionCounts.set(clientId, (sessionCounts.get(clientId) || 0) + 1);
     socket.data.clientId = clientId;
 
-    if (username) usernameStore.set(clientId, escapeHTML(username));
+    if (typeof username === 'string' && username.length <= 24) {
+      await redis.set(
+        `username:${clientId}`,
+        escapeHTML(username),
+        'EX',
+        SESSION_TTL_SEC
+      );
+    }
 
     socket.join(clientId);
     socket.emit('authenticated');
   });
 
   socket.on('joinRoom', ({ roomId }) => {
-    if (!socket.data.clientId || !/^[\w-]{1,32}$/.test(roomId)) return;
+    if (!validRoomId(roomId)) return;
     socket.join(roomId);
     socket.data.roomId = roomId;
-    io.to(roomId).emit('roomUserCount', io.sockets.adapter.rooms.get(roomId)?.size || 0);
+
+    const size = io.sockets.adapter.rooms.get(roomId)?.size || 0;
+    io.to(roomId).emit('roomUserCount', size);
   });
 
-  socket.on('disconnecting', () => {
-    const id = socket.data.clientId;
-    if (!id) return;
-    const c = (sessionCounts.get(id) || 1) - 1;
-    c <= 0 ? sessionCounts.delete(id) : sessionCounts.set(id, c);
+  socket.on('disconnect', () => {
+    const roomId = socket.data.roomId;
+    if (!roomId) return;
+    const size = io.sockets.adapter.rooms.get(roomId)?.size || 0;
+    io.to(roomId).emit('roomUserCount', size);
   });
 });
 
-// -------------------- SPA対応 --------------------
-app.use(express.static(`${__dirname}/public`));
-app.get(/^\/(?!api\/).*/, (_, res) => res.sendFile(`${__dirname}/public/index.html`));
+// -------------------- Monthly Reset --------------------
+async function monthlyReset() {
+  await redis.flushdb();
+  lastSendMap.clear();
+  console.log('[MemoryDB] Monthly flushdb');
+}
 
-// -------------------- サーバー起動 --------------------
-(async () => {
-  await monthlyMemoryReset(io);
-  cron.schedule('0 0 0 1 * *', () => monthlyMemoryReset(io), { timezone: 'Asia/Tokyo' });
-  httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-})();
+cron.schedule('0 0 0 1 * *', monthlyReset, {
+  timezone: 'Asia/Tokyo',
+});
+
+// -------------------- Start --------------------
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
