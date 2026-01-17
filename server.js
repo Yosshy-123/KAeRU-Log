@@ -15,7 +15,7 @@ try {
 // -------------------- 環境変数 --------------------
 const PORT = process.env.PORT || 3000;
 const REDIS_URL = process.env.REDIS_URL;
-const WORKER_SECRET = process.env.WORKER_SECRET || 'supersecretkey1234';
+const TOKEN_KEY = process.env.TOKEN_KEY || 'supersecretkey1234';
 const SECRET_KEY = process.env.SECRET_KEY || 'supersecretkey1234';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'adminkey1234';
 
@@ -149,15 +149,15 @@ const io = new SocketIOServer(httpServer, { cors: { origin: '*' } });
 // -------------------- Socket.IO 認証 --------------------
 io.use((socket, next) => {
   const headers = socket.handshake.headers;
-  if (!isFromCloudflare(headers)) return next(new Error('Forbidden (Not Cloudflare)'));
-  if (headers['x-worker-secret'] !== WORKER_SECRET) return next(new Error('Forbidden'));
+  if (!isFromCloudflare(headers)) return next(new Error('Forbidden'));
+  if (headers['x-worker-secret'] !== TOKEN_KEY) return next(new Error('Forbidden'));
   next();
 });
 
 // -------------------- Express Middleware --------------------
 app.use((req, res, next) => {
-  if (!isFromCloudflare(req.headers)) return res.status(403).send('Forbidden (Not Cloudflare)');
-  if (req.headers['x-worker-secret'] !== WORKER_SECRET) return res.status(403).send('Forbidden');
+  if (!isFromCloudflare(req.headers)) return res.status(403).send('Forbidden');
+  if (req.headers['x-worker-secret'] !== TOKEN_KEY) return res.status(403).send('Forbidden');
   next();
 });
 
