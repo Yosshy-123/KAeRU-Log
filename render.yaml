@@ -16,7 +16,7 @@ services:
         value: ""
       - key: SECRET_KEY
         value: ""
-      - key: WORKER_SECRET
+      - key: TOKEN_KEY
         value: ""
       - key: NODE_ENV
         value: "production"
