@@ -107,8 +107,8 @@ npm start
 ```env
 REDIS_URL=<Redis の URL>
 ADMIN_PASS=<管理者パスワード>
-SECRET_KEY=<トークン用シークレットキー>
-WORKER_SECRET=<Cloudflare Workers と共有するシークレットキー>
+SECRET_KEY=<クライアントID生成用シークレットキー>
+TOKEN_KEY=<トークンキー>
 ```
 
 9. デプロイ完了後、URL を控えておきます。
@@ -120,7 +120,7 @@ WORKER_SECRET=<Cloudflare Workers と共有するシークレットキー>
 
 ```env
 TARGET_URL=<Render のアプリ本体 URL>
-WORKER_SECRET=<アプリ本体と同じシークレットキー>
+TOKEN_KEY=<アプリ本体と同じトークンキー>
 ```
 
 3. デプロイします。
