@@ -31,7 +31,7 @@ export default {
       }
     }
 
-    newHeaders.set('x-worker-secret', TOKEN_KEY);
+    newHeaders.set('token-key', TOKEN_KEY);
 
     let body = null;
     if (['POST', 'PUT', 'PATCH'].includes(request.method.toUpperCase())) {
