@@ -10,7 +10,7 @@ export default {
     url.hostname = target.hostname;
     url.protocol = target.protocol;
 
-    const WORKER_SECRET = env.WORKER_SECRET || 'supersecretkey1234';
+    const TOKEN_KEY = env.TOKEN_KEY || 'supersecretkey1234';
 
     const newHeaders = new Headers();
 
@@ -31,7 +31,7 @@ export default {
       }
     }
 
-    newHeaders.set('x-worker-secret', WORKER_SECRET);
+    newHeaders.set('x-worker-secret', TOKEN_KEY);
 
     let body = null;
     if (['POST', 'PUT', 'PATCH'].includes(request.method.toUpperCase())) {
