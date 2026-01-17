@@ -107,8 +107,8 @@ npm start
 ```env
 REDIS_URL=<Redis URL>
 ADMIN_PASS=<Administrator Password>
-SECRET_KEY=<Secret key for tokens>
-WORKER_SECRET=<Secret key to share with Cloudflare Workers>
+SECRET_KEY=<Secret key used to generate and sign tokens>
+TOKEN_KEY=<Token secret key>
 ```
 
 9. After deployment is complete, note down the URL.
@@ -120,7 +120,7 @@ WORKER_SECRET=<Secret key to share with Cloudflare Workers>
 
 ```env
 TARGET_URL=<Render application URL>
-WORKER_SECRET=<Same secret key as the main application>
+TOKEN_KEY=<Same token key as the main application>
 ```
 
 3. Deploy.
