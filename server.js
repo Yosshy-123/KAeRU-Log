@@ -150,14 +150,14 @@ const io = new SocketIOServer(httpServer, { cors: { origin: '*' } });
 io.use((socket, next) => {
   const headers = socket.handshake.headers;
   if (!isFromCloudflare(headers)) return next(new Error('Forbidden'));
-  if (headers['x-worker-secret'] !== TOKEN_KEY) return next(new Error('Forbidden'));
+  if (headers['token-key'] !== TOKEN_KEY) return next(new Error('Forbidden'));
   next();
 });
 
 // -------------------- Express Middleware --------------------
 app.use((req, res, next) => {
   if (!isFromCloudflare(req.headers)) return res.status(403).send('Forbidden');
-  if (req.headers['x-worker-secret'] !== TOKEN_KEY) return res.status(403).send('Forbidden');
+  if (req.headers['token-key'] !== TOKEN_KEY) return res.status(403).send('Forbidden');
   next();
 });
 
