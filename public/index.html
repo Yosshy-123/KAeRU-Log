@@ -14,6 +14,11 @@
 
 <body class="bg-slate-100 text-slate-800 overflow-hidden">
 
+<!-- Toast -->
+<div id="toastNotification"
+    class="hidden opacity-0 transition-opacity fixed top-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-sm px-4 py-2 rounded-lg shadow z-[9999]">
+</div>
+
 <div class="w-screen h-screen flex flex-col">
 
   <!-- Header -->
@@ -82,11 +87,6 @@
 
   <!-- overlay for mobile menu -->
   <div id="mobileMenuOverlay" class="fixed inset-0 bg-black/40 hidden z-30 md:hidden"></div>
-
-  <!-- Toast -->
-  <div id="toastNotification"
-       class="hidden opacity-0 transition-opacity fixed top-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-sm px-4 py-2 rounded-lg shadow z-[9999]">
-  </div>
 
   <!-- Main -->
   <main class="flex-1 overflow-y-auto bg-slate-50 px-4 sm:px-6 py-4">
