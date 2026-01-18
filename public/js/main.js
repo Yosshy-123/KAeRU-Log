@@ -205,9 +205,7 @@ document.addEventListener('DOMContentLoaded', () => {
         messages.forEach(m => elements.messageList.appendChild(createMessage(m)));
       }
       if (isAutoScroll) scrollBottom(false);
-    } catch {
-      showToast('メッセージ取得に失敗しました');
-    }
+    } catch {}
   }
 
   async function sendMessage() {
@@ -216,7 +214,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!textarea || !button) return;
 
     const text = textarea.value.trim();
-    if (!text) return;
+    if (!text) {
+      showToast('メッセージを入力してください');
+      return;
+    }
 
     button.disabled = true;
     button.textContent = '送信中…';
@@ -232,8 +233,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (!myToken) {
         pendingMessage = payload;
-        if (socket?.connected) socket.emit('authenticate', { token: '', username: myName });
-        showToast('トークンを再取得しています...');
+
+        if (socket?.connected) {
+          socket.emit('authenticate', { token: '', username: myName });
+          showToast('認証情報を取得中です…');
+        } else {
+          showToast('サーバーに接続されていません');
+        }
+
         return;
       }
 
@@ -244,7 +251,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       if (!res.ok) {
-        showToast('送信に失敗しました');
         return;
       }
 
@@ -252,7 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
       focusInput();
     } catch (e) {
       console.error(e);
-      showToast('送信に失敗しました');
+      showToast('通信エラーが発生しました');
     } finally {
       button.disabled = false;
       button.textContent = '送信';
@@ -301,15 +307,11 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        showToast(data.error || '削除に失敗しました');
         return;
       }
       closeAdminModal();
-      showToast('全メッセージが削除されました');
       focusInput();
-    } catch {
-      showToast('削除に失敗しました');
-    }
+    } catch {}
   }
 
   function saveProfile() {
@@ -390,7 +392,6 @@ document.addEventListener('DOMContentLoaded', () => {
   socket.on('clearMessages', () => {
     messages = [];
     if (elements.messageList) elements.messageList.innerHTML = '';
-    showToast('全メッセージが削除されました');
   });
 
   socket.on('notify', data => {
