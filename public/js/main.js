@@ -76,7 +76,7 @@
     elements.toastNotification.classList.add('show');
     clearTimeout(showToast._t);
     showToast._t = setTimeout(() => {
-      elements.toastNotification ?.classList.remove('show');
+      elements.toastNotification?.classList.remove('show');
     }, ms);
   }
 
@@ -177,7 +177,7 @@
   }
 
   async function sendMessage() {
-    const text = elements.messageTextarea ?.value.trim();
+    const text = elements.messageTextarea?.value.trim();
     if (!text) return;
 
     if (!myName) {
@@ -195,7 +195,7 @@
     };
 
     if (!myToken) {
-      if (socket ?.connected) {
+      if (socket?.connected) {
         pendingMessage = payload;
         socket.emit('authenticate', {
           token: '',
@@ -222,7 +222,7 @@
           myToken = '';
           localStorage.removeItem('chatToken');
           pendingMessage = payload;
-          if (socket ?.connected) socket.emit('authenticate', {
+          if (socket?.connected) socket.emit('authenticate', {
             token: '',
             username: myName
           });
@@ -243,26 +243,26 @@
   /* ---------- モーダル ---------- */
   function openProfileModal() {
     if (elements.profileNameInput) elements.profileNameInput.value = myName || '';
-    elements.profileModal ?.classList.add('show');
+    elements.profileModal?.classList.add('show');
     focusInput(elements.profileNameInput);
   }
 
   function closeProfileModal() {
-    elements.profileModal ?.classList.remove('show');
+    elements.profileModal?.classList.remove('show');
   }
 
   function openAdminModal() {
     if (elements.adminPasswordInput) elements.adminPasswordInput.value = '';
-    elements.adminModal ?.classList.add('show');
+    elements.adminModal?.classList.add('show');
     focusInput(elements.adminPasswordInput);
   }
 
   function closeAdminModal() {
-    elements.adminModal ?.classList.remove('show');
+    elements.adminModal?.classList.remove('show');
   }
 
   async function deleteAllMessages() {
-    const password = elements.adminPasswordInput ?.value || '';
+    const password = elements.adminPasswordInput?.value || '';
     if (!password) {
       showToast('パスワードを入力してください');
       return;
@@ -300,8 +300,8 @@
 
   socket.on('connect', () => {
     if (elements.connectionText) elements.connectionText.textContent = 'オンライン';
-    elements.connectionIndicator ?.classList.remove('offline');
-    elements.connectionIndicator ?.classList.add('online');
+    elements.connectionIndicator?.classList.remove('offline');
+    elements.connectionIndicator?.classList.add('online');
     socket.emit('authenticate', {
       token: myToken || '',
       username: myName || ''
@@ -318,8 +318,8 @@
   socket.on('disconnect', () => {
     isSocketAuthenticated = false;
     if (elements.connectionText) elements.connectionText.textContent = '切断';
-    elements.connectionIndicator ?.classList.remove('online');
-    elements.connectionIndicator ?.classList.add('offline');
+    elements.connectionIndicator?.classList.remove('online');
+    elements.connectionIndicator?.classList.add('offline');
   });
 
   socket.on('assignToken', token => {
@@ -355,7 +355,7 @@
 
   socket.on('newMessage', msg => {
     messages.push(msg);
-    elements.messageList ?.appendChild(createMessage(msg));
+    elements.messageList?.appendChild(createMessage(msg));
     if (isAutoScroll) scrollBottom(true);
   });
 
@@ -371,7 +371,7 @@
   });
 
   socket.on('notify', data => {
-    const msg = typeof data === 'string' ? data : data ?.message;
+    const msg = typeof data === 'string' ? data : data?.message;
     if (msg) showToast(msg);
   });
 
@@ -387,7 +387,7 @@
   });
 
   /* ---------- イベント登録 ---------- */
-  elements.sendMessageButton ?.addEventListener('click', sendMessage);
+  elements.sendMessageButton?.addEventListener('click', sendMessage);
 
   if (elements.messageTextarea) {
     const isMobileLike = window.matchMedia('(max-width: 820px) and (pointer: coarse)').matches;
@@ -399,13 +399,13 @@
     });
   }
 
-  elements.openProfileButton ?.addEventListener('click', openProfileModal);
-  elements.closeProfileButton ?.addEventListener('click', () => {
+  elements.openProfileButton?.addEventListener('click', openProfileModal);
+  elements.closeProfileButton?.addEventListener('click', () => {
     closeProfileModal();
     focusInput();
   });
-  elements.saveProfileButton ?.addEventListener('click', () => {
-    const v = (elements.profileNameInput ?.value || '').trim().slice(0, 24);
+  elements.saveProfileButton?.addEventListener('click', () => {
+    const v = (elements.profileNameInput?.value || '').trim().slice(0, 24);
     if (!v) {
       showToast('ユーザー名は1〜24文字で設定してください');
       return;
@@ -418,14 +418,14 @@
     focusInput();
   });
 
-  elements.openAdminButton ? .addEventListener('click', openAdminModal);
-  elements.closeAdminButton ? .addEventListener('click', () => {
+  elements.openAdminButton?.addEventListener('click', openAdminModal);
+  elements.closeAdminButton?.addEventListener('click', () => {
     closeAdminModal();
     focusInput();
   });
-  elements.clearMessagesButton ? .addEventListener('click', deleteAllMessages);
+  elements.clearMessagesButton?.addEventListener('click', deleteAllMessages);
 
-  elements.chatContainer ? .addEventListener('scroll', () => {
+  elements.chatContainer?.addEventListener('scroll', () => {
     isAutoScroll = isScrolledToBottom();
   });
 
@@ -439,12 +439,12 @@
     location.href = `/room/${encodeURIComponent(newRoom)}`;
   }
 
-  elements.joinRoomButton ?.addEventListener('click', () => changeChatRoom(elements.roomIdInput.value.trim()));
+  elements.joinRoomButton?.addEventListener('click', () => changeChatRoom(elements.roomIdInput.value.trim()));
   if (elements.roomIdInput) {
     elements.roomIdInput.addEventListener('keydown', e => {
       if (e.key === 'Enter') {
         e.preventDefault();
-        elements.joinRoomButton ?.click();
+        elements.joinRoomButton?.click();
       }
     });
     elements.roomIdInput.value = roomId;
