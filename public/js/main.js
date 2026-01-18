@@ -51,16 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
     onlineUserCount: document.getElementById('onlineUserCount'),
 
     roomIdInput: document.getElementById('roomIdInput'),
-    joinRoomButton: document.getElementById('joinRoomButton'),
-
-    mobileOpenProfile: document.getElementById('mobileOpenProfile'),
-    mobileOpenAdmin: document.getElementById('mobileOpenAdmin'),
-    mobileMenu: document.getElementById('mobileMenu'),
-    mobileMenuClose: document.getElementById('mobileMenuClose'),
-    mobileMenuOverlay: document.getElementById('mobileMenuOverlay'),
-    roomIdInputMobile: document.getElementById('roomIdInputMobile'),
-    joinRoomButtonMobile: document.getElementById('joinRoomButtonMobile'),
-    menuToggleButton: document.getElementById('menuToggleButton')
+    joinRoomButton: document.getElementById('joinRoomButton')
   };
 
   if (elements.currentUsernameLabel) {
@@ -86,13 +77,12 @@ document.addEventListener('DOMContentLoaded', () => {
     toast.textContent = text;
     toast.setAttribute('role', 'status');
     toast.setAttribute('aria-live', 'polite');
-    toast.classList.remove('opacity-0', 'scale-90');
-    toast.classList.add('opacity-100', 'scale-100');
+
+    toast.classList.add('show');
 
     clearTimeout(showToast._t);
     showToast._t = setTimeout(() => {
-      toast.classList.remove('opacity-100', 'scale-100');
-      toast.classList.add('opacity-0', 'scale-90');
+      toast.classList.remove('show');
     }, duration);
   }
 
@@ -132,23 +122,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const el = elements.connectionIndicator;
     if (!el) return;
 
-    el.classList.remove('bg-yellow-400', 'bg-green-500', 'bg-red-500');
+    el.classList.remove('online', 'offline');
 
     switch (state) {
       case 'online':
-        el.classList.add('bg-green-500');
+        el.classList.add('online');
         el.setAttribute('aria-label', 'オンライン');
         if (elements.connectionText) elements.connectionText.textContent = 'オンライン';
         break;
 
       case 'offline':
-        el.classList.add('bg-red-500');
+        el.classList.add('offline');
         el.setAttribute('aria-label', '切断');
         if (elements.connectionText) elements.connectionText.textContent = '切断';
         break;
 
       default:
-        el.classList.add('bg-yellow-400');
         el.setAttribute('aria-label', '接続中');
         if (elements.connectionText) elements.connectionText.textContent = '接続中';
     }
@@ -159,20 +148,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const self = msg.seed === mySeed;
 
     const wrap = document.createElement('div');
-    wrap.className = `flex items-start gap-3 ${self ? 'justify-end' : ''}`;
+    wrap.className = 'message-item' + (self ? ' is-self' : '');
 
     const avatar = document.createElement('div');
-    avatar.className = 'w-10 h-10 rounded-full bg-slate-300 flex items-center justify-center font-semibold text-sm text-slate-700';
+    avatar.className = 'message-avatar';
     avatar.textContent = getInitials(msg.username);
 
     const bubble = document.createElement('div');
-    bubble.className = 'rounded-xl p-3 bg-white shadow max-w-[70%]';
+    bubble.className = 'message-bubble';
 
     const meta = document.createElement('div');
-    meta.className = 'flex items-center gap-2 text-xs text-slate-500 mb-1';
+    meta.className = 'message-meta';
 
-    const nameEl = document.createElement('span');
-    nameEl.className = 'font-semibold';
+    const nameEl = document.createElement('div');
+    nameEl.className = 'message-username';
     nameEl.textContent = msg.username || '匿名';
 
     const dot = document.createElement('span');
@@ -180,15 +169,17 @@ document.addEventListener('DOMContentLoaded', () => {
     dot.style.opacity = '0.6';
 
     const timeEl = document.createElement('span');
+    timeEl.className = 'message-time';
     timeEl.textContent = msg.time || '';
 
     meta.append(nameEl, dot, timeEl);
 
     const text = document.createElement('div');
-    text.className = 'text-sm text-slate-800 whitespace-pre-wrap';
+    text.className = 'message-text';
     text.innerHTML = msg.message || '';
 
     bubble.append(meta, text);
+
     wrap.append(avatar, bubble);
 
     return wrap;
@@ -268,8 +259,7 @@ document.addEventListener('DOMContentLoaded', () => {
   /* ---------- モーダル ---------- */
   function openModal(modal) {
     if (!modal) return;
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
+    modal.classList.add('show');
     modal.setAttribute('aria-hidden', 'false');
     const input = modal.querySelector('input, textarea, button');
     input?.focus();
@@ -281,8 +271,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function closeModal(modal) {
     if (!modal) return;
-    modal.classList.add('hidden');
-    modal.classList.remove('flex');
+    modal.classList.remove('show');
     modal.setAttribute('aria-hidden', 'true');
     document.removeEventListener('keydown', modal._escHandler);
     focusInput();
@@ -437,25 +426,6 @@ document.addEventListener('DOMContentLoaded', () => {
   elements.closeAdminButton?.addEventListener('click', closeAdminModal);
   elements.clearMessagesButton?.addEventListener('click', deleteAllMessages);
 
-  // モバイルメニュー
-  elements.mobileOpenProfile?.addEventListener('click', openProfileModal);
-  elements.mobileOpenAdmin?.addEventListener('click', openAdminModal);
-  elements.menuToggleButton?.addEventListener('click', () => {
-    elements.mobileMenu?.classList.remove('translate-x-full');
-    elements.mobileMenuOverlay?.classList.remove('hidden');
-    elements.mobileMenu?.setAttribute('aria-hidden', 'false');
-  });
-  elements.mobileMenuClose?.addEventListener('click', () => {
-    elements.mobileMenu?.classList.add('translate-x-full');
-    elements.mobileMenuOverlay?.classList.add('hidden');
-    elements.mobileMenu?.setAttribute('aria-hidden', 'true');
-  });
-  elements.mobileMenuOverlay?.addEventListener('click', () => {
-    elements.mobileMenu?.classList.add('translate-x-full');
-    elements.mobileMenuOverlay?.classList.add('hidden');
-    elements.mobileMenu?.setAttribute('aria-hidden', 'true');
-  });
-
   /* ---------- ルーム切替 ---------- */
   function changeChatRoom(newRoom) {
     if (!/^[a-zA-Z0-9_-]{1,32}$/.test(newRoom)) {
@@ -469,22 +439,6 @@ document.addEventListener('DOMContentLoaded', () => {
   elements.joinRoomButton?.addEventListener('click', () =>
     changeChatRoom(elements.roomIdInput.value.trim())
   );
-  elements.joinRoomButtonMobile?.addEventListener('click', () =>
-    changeChatRoom(elements.roomIdInputMobile?.value.trim())
-  );
-
-  if (elements.roomIdInput) {
-    elements.roomIdInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); changeChatRoom(elements.roomIdInput.value.trim()); }
-    });
-    elements.roomIdInput.value = roomId;
-  }
-  if (elements.roomIdInputMobile) {
-    elements.roomIdInputMobile.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); changeChatRoom(elements.roomIdInputMobile.value.trim()); }
-    });
-    elements.roomIdInputMobile.value = roomId;
-  }
 
   // 自動スクロール
   elements.chatContainer?.addEventListener('scroll', () => {
