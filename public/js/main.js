@@ -288,7 +288,13 @@ document.addEventListener('DOMContentLoaded', () => {
     focusInput();
   }
 
-  function openProfileModal() { openModal(elements.profileModal); }
+  function openProfileModal() {
+    if (elements.profileNameInput) {
+      elements.profileNameInput.value = myName || '';
+      setTimeout(() => elements.profileNameInput.select(), 0);
+    }
+    openModal(elements.profileModal);
+  }
   function closeProfileModal() { closeModal(elements.profileModal); }
   function openAdminModal() { openModal(elements.adminModal); }
   function closeAdminModal() { closeModal(elements.adminModal); }
