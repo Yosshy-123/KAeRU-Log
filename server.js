@@ -243,6 +243,11 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
   const clientId = req.clientId;
   if (!clientId) return res.status(403).json({ error: 'Invalid token' });
 
+  if (typeof username === 'string' && username.trim().length > 0) {
+    const safeUsername = escapeHTML(username.trim().slice(0, 24));
+    await redisClient.set(`username:${clientId}`, safeUsername, 'EX', SESSION_TTL_SEC);
+  }
+
   const MESSAGE_RATE_LIMIT_MS = 1000;
   const REPEAT_LIMIT = 3;
   const MUTE_DURATION_SEC = 30;
@@ -374,8 +379,9 @@ io.on('connection', (socket) => {
 
     socket.data.clientId = clientId;
 
-    if (typeof username === 'string' && username.length > 0 && username.length <= 24) {
-      await redisClient.set(`username:${clientId}`, escapeHTML(username), 'EX', SESSION_TTL_SEC);
+    if (typeof username === 'string' && username.trim().length > 0) {
+      const safeUsername = escapeHTML(username.trim().slice(0, 24));
+      await redisClient.set(`username:${clientId}`, safeUsername, 'EX', SESSION_TTL_SEC);
     }
 
     socket.emit('authenticated');
