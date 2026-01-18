@@ -1,4 +1,4 @@
-(() => {
+document.addEventListener('DOMContentLoaded', () => {
   /* ---------- 初期設定 ---------- */
   const SERVER_URL = window.location.origin.replace(/\/$/, '');
   const path = location.pathname.split('/').filter(Boolean);
@@ -51,7 +51,16 @@
     onlineUserCount: document.getElementById('onlineUserCount'),
 
     roomIdInput: document.getElementById('roomIdInput'),
-    joinRoomButton: document.getElementById('joinRoomButton')
+    joinRoomButton: document.getElementById('joinRoomButton'),
+
+    mobileOpenProfile: document.getElementById('mobileOpenProfile'),
+    mobileOpenAdmin: document.getElementById('mobileOpenAdmin'),
+    mobileMenu: document.getElementById('mobileMenu'),
+    mobileMenuClose: document.getElementById('mobileMenuClose'),
+    mobileMenuOverlay: document.getElementById('mobileMenuOverlay'),
+    roomIdInputMobile: document.getElementById('roomIdInputMobile'),
+    joinRoomButtonMobile: document.getElementById('joinRoomButtonMobile'),
+    menuToggleButton: document.getElementById('menuToggleButton')
   };
 
   if (elements.currentUsernameLabel) {
@@ -83,10 +92,7 @@
   function focusInput(target = elements.messageTextarea) {
     if (!target) return;
     target.focus();
-    target.scrollIntoView({
-      behavior: 'smooth',
-      block: 'center'
-    });
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     if ('value' in target) {
       const v = target.value;
       target.value = '';
@@ -101,10 +107,7 @@
 
   function scrollBottom(smooth = true) {
     const c = elements.chatContainer || document.documentElement;
-    c.scrollTo({
-      top: c.scrollHeight,
-      behavior: smooth ? 'smooth' : 'auto'
-    });
+    c.scrollTo({ top: c.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
   }
 
   function getInitials(name) {
@@ -123,20 +126,20 @@
     const self = msg.seed === mySeed;
 
     const wrap = document.createElement('div');
-    wrap.className = `message-item${self ? ' is-self' : ''}`;
+    wrap.className = `flex items-start gap-3 ${self ? 'justify-end' : ''}`;
 
     const avatar = document.createElement('div');
-    avatar.className = 'message-avatar';
+    avatar.className = 'w-10 h-10 rounded-full bg-slate-300 flex items-center justify-center font-semibold text-sm text-slate-700';
     avatar.textContent = getInitials(msg.username);
 
     const bubble = document.createElement('div');
-    bubble.className = 'message-bubble';
+    bubble.className = 'rounded-xl p-3 bg-white shadow max-w-[70%]';
 
     const meta = document.createElement('div');
-    meta.className = 'message-meta';
+    meta.className = 'flex items-center gap-2 text-xs text-slate-500 mb-1';
 
     const nameEl = document.createElement('span');
-    nameEl.className = 'message-username';
+    nameEl.className = 'font-semibold';
     nameEl.textContent = msg.username || '匿名';
 
     const dot = document.createElement('span');
@@ -149,7 +152,7 @@
     meta.append(nameEl, dot, timeEl);
 
     const text = document.createElement('div');
-    text.className = 'message-text';
+    text.className = 'text-sm text-slate-800 whitespace-pre-wrap';
     text.innerHTML = msg.message || '';
 
     bubble.append(meta, text);
@@ -161,9 +164,7 @@
   /* ---------- API ---------- */
   async function loadHistory() {
     try {
-      const res = await fetch(`${SERVER_URL}/api/messages/${encodeURIComponent(roomId)}`, {
-        cache: 'no-store'
-      });
+      const res = await fetch(`${SERVER_URL}/api/messages/${encodeURIComponent(roomId)}`, { cache: 'no-store' });
       if (!res.ok) throw 0;
       messages = await res.json();
       if (elements.messageList) {
@@ -186,21 +187,12 @@
       return;
     }
 
-    const payload = {
-      roomId,
-      username: myName,
-      message: text,
-      seed: mySeed,
-      token: myToken
-    };
+    const payload = { roomId, username: myName, message: text, seed: mySeed, token: myToken };
 
     if (!myToken) {
       if (socket?.connected) {
         pendingMessage = payload;
-        socket.emit('authenticate', {
-          token: '',
-          username: myName
-        });
+        socket.emit('authenticate', { token: '', username: myName });
         showToast('トークンを再取得しています...');
         return;
       }
@@ -211,9 +203,7 @@
     try {
       const res = await fetch(`${SERVER_URL}/api/messages`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       const data = await res.json().catch(() => ({}));
@@ -222,10 +212,7 @@
           myToken = '';
           localStorage.removeItem('chatToken');
           pendingMessage = payload;
-          if (socket?.connected) socket.emit('authenticate', {
-            token: '',
-            username: myName
-          });
+          if (socket?.connected) socket.emit('authenticate', { token: '', username: myName });
           showToast('認証エラーのため送信できませんでした');
         } else {
           showToast(data.error || '送信に失敗しました');
@@ -243,22 +230,26 @@
   /* ---------- モーダル ---------- */
   function openProfileModal() {
     if (elements.profileNameInput) elements.profileNameInput.value = myName || '';
-    elements.profileModal?.classList.add('show');
+    elements.profileModal?.classList.add('flex');
+    elements.profileModal?.classList.remove('hidden');
     focusInput(elements.profileNameInput);
   }
 
   function closeProfileModal() {
-    elements.profileModal?.classList.remove('show');
+    elements.profileModal?.classList.add('hidden');
+    elements.profileModal?.classList.remove('flex');
   }
 
   function openAdminModal() {
     if (elements.adminPasswordInput) elements.adminPasswordInput.value = '';
-    elements.adminModal?.classList.add('show');
+    elements.adminModal?.classList.add('flex');
+    elements.adminModal?.classList.remove('hidden');
     focusInput(elements.adminPasswordInput);
   }
 
   function closeAdminModal() {
-    elements.adminModal?.classList.remove('show');
+    elements.adminModal?.classList.add('hidden');
+    elements.adminModal?.classList.remove('flex');
   }
 
   async function deleteAllMessages() {
@@ -270,14 +261,8 @@
     try {
       const res = await fetch(`${SERVER_URL}/api/clear`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          password,
-          roomId,
-          token: myToken
-        })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password, roomId, token: myToken })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -293,26 +278,18 @@
 
   /* ---------- Socket.IO ---------- */
   function joinRoom() {
-    socket.emit('joinRoom', {
-      roomId
-    });
+    socket.emit('joinRoom', { roomId });
   }
 
   socket.on('connect', () => {
     if (elements.connectionText) elements.connectionText.textContent = 'オンライン';
     elements.connectionIndicator?.classList.remove('offline');
     elements.connectionIndicator?.classList.add('online');
-    socket.emit('authenticate', {
-      token: myToken || '',
-      username: myName || ''
-    });
+    socket.emit('authenticate', { token: myToken || '', username: myName || '' });
   });
 
   socket.on('reconnect', () => {
-    socket.emit('authenticate', {
-      token: myToken || '',
-      username: myName || ''
-    });
+    socket.emit('authenticate', { token: myToken || '', username: myName || '' });
   });
 
   socket.on('disconnect', () => {
@@ -326,27 +303,16 @@
     myToken = token;
     localStorage.setItem('chatToken', token);
     if (!pendingMessage) return;
-
-    const resend = {
-      ...pendingMessage,
-      token: myToken
-    };
+    const resend = { ...pendingMessage, token: myToken };
     pendingMessage = null;
     (async () => {
       try {
         const res = await fetch(`${SERVER_URL}/api/messages`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(resend)
         });
-        if (res.ok) {
-          if (elements.messageTextarea) elements.messageTextarea.value = '';
-        } else {
-          const data = await res.json().catch(() => ({}));
-        }
-
+        if (res.ok && elements.messageTextarea) elements.messageTextarea.value = '';
       } catch (e) {
         console.error('resend error', e);
       }
@@ -399,17 +365,12 @@
     });
   }
 
+  // プロフィール・管理モーダル
   elements.openProfileButton?.addEventListener('click', openProfileModal);
-  elements.closeProfileButton?.addEventListener('click', () => {
-    closeProfileModal();
-    focusInput();
-  });
+  elements.closeProfileButton?.addEventListener('click', () => { closeProfileModal(); focusInput(); });
   elements.saveProfileButton?.addEventListener('click', () => {
     const v = (elements.profileNameInput?.value || '').trim().slice(0, 24);
-    if (!v) {
-      showToast('ユーザー名は1〜24文字で設定してください');
-      return;
-    }
+    if (!v) { showToast('ユーザー名は1〜24文字で設定してください'); return; }
     myName = v;
     localStorage.setItem('chat_username', myName);
     if (elements.currentUsernameLabel) elements.currentUsernameLabel.textContent = myName;
@@ -419,11 +380,27 @@
   });
 
   elements.openAdminButton?.addEventListener('click', openAdminModal);
-  elements.closeAdminButton?.addEventListener('click', () => {
-    closeAdminModal();
-    focusInput();
-  });
+  elements.closeAdminButton?.addEventListener('click', () => { closeAdminModal(); focusInput(); });
   elements.clearMessagesButton?.addEventListener('click', deleteAllMessages);
+
+  // モバイル用
+  elements.mobileOpenProfile?.addEventListener('click', openProfileModal);
+  elements.mobileOpenAdmin?.addEventListener('click', openAdminModal);
+  elements.menuToggleButton?.addEventListener('click', () => {
+    elements.mobileMenu?.classList.remove('translate-x-full');
+    elements.mobileMenuOverlay?.classList.remove('hidden');
+  });
+  elements.mobileMenuClose?.addEventListener('click', () => {
+    elements.mobileMenu?.classList.add('translate-x-full');
+    elements.mobileMenuOverlay?.classList.add('hidden');
+  });
+  elements.mobileMenuOverlay?.addEventListener('click', () => {
+    elements.mobileMenu?.classList.add('translate-x-full');
+    elements.mobileMenuOverlay?.classList.add('hidden');
+  });
+  elements.joinRoomButtonMobile?.addEventListener('click', () =>
+    changeChatRoom(elements.roomIdInputMobile?.value.trim())
+  );
 
   elements.chatContainer?.addEventListener('scroll', () => {
     isAutoScroll = isScrolledToBottom();
@@ -442,11 +419,9 @@
   elements.joinRoomButton?.addEventListener('click', () => changeChatRoom(elements.roomIdInput.value.trim()));
   if (elements.roomIdInput) {
     elements.roomIdInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        elements.joinRoomButton?.click();
-      }
+      if (e.key === 'Enter') { e.preventDefault(); elements.joinRoomButton?.click(); }
     });
     elements.roomIdInput.value = roomId;
   }
-})();
+  if (elements.roomIdInputMobile) elements.roomIdInputMobile.value = roomId;
+});
