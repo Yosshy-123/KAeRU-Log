@@ -320,16 +320,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   socket.on('connect', () => {
     if (elements.connectionText) elements.connectionText.textContent = 'オンライン';
-    elements.connectionIndicator?.classList.remove('offline');
-    elements.connectionIndicator?.classList.add('online');
+    elements.connectionIndicator?.classList.remove('bg-red-500', 'bg-gray-400');
+    elements.connectionIndicator?.classList.add('bg-green-500');
     socket.emit('authenticate', { token: myToken || '', username: myName || '' });
   });
 
   socket.on('disconnect', () => {
     isSocketAuthenticated = false;
     if (elements.connectionText) elements.connectionText.textContent = '切断';
-    elements.connectionIndicator?.classList.remove('online');
-    elements.connectionIndicator?.classList.add('offline');
+    elements.connectionIndicator?.classList.remove('bg-green-500', 'bg-gray-400');
+    elements.connectionIndicator?.classList.add('bg-red-500');
   });
 
   socket.on('assignToken', token => {
