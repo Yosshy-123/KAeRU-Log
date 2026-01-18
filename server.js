@@ -127,10 +127,23 @@ async function validateAuthToken(token) {
 // -------------------- Session管理 --------------------
 async function requireSocketSession(req, res, next) {
   const token = req.body.token || req.headers['authorization'];
-  if (!token) return res.status(401).json({ error: 'No token' });
+
+  if (!token) {
+    return res.status(401).json({ error: 'No token' });
+  }
 
   const clientId = await validateAuthToken(token);
-  if (!clientId) return res.status(403).json({ error: 'Invalid token' });
+
+  if (!clientId) {
+    const possibleClientId = token.split('.')?.[0];
+    if (possibleClientId) {
+      io.to(possibleClientId).emit('notify', {
+        message: '認証が無効です。再読み込みしてください',
+        type: 'error'
+      });
+    }
+    return res.status(403).json({ error: 'Invalid token' });
+  }
 
   req.clientId = clientId;
   next();
@@ -201,11 +214,16 @@ async function monthlyRedisReset(ioInstance) {
 }
 
 // -------------------- API --------------------
-app.get('/api/messages/:roomId', async (req, res) => {
+app.get('/api/messages/:roomId', requireSocketSession, async (req, res) => {
   try {
     const roomId = req.params.roomId;
-    if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId))
+    if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) {
+      io.to(req.clientId).emit('notify', {
+        message: 'ルームIDが不正です',
+        type: 'error'
+      });
       return res.status(400).json({ error: 'invalid roomId' });
+    }
 
     const rawMessages = await redisClient.lrange(`messages:${roomId}`, 0, -1);
     const messages = rawMessages.map((m) => {
@@ -231,14 +249,29 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
   if (!roomId || !username || !message || !token || !seed)
     return res.status(400).json({ error: 'Invalid data' });
 
-  if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId))
+  if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) {
+    io.to(req.clientId).emit('notify', {
+      message: 'ルームIDが不正です',
+      type: 'error'
+    });
     return res.status(400).json({ error: 'invalid roomId' });
+  }
 
-  if (username.length === 0 || username.length > 24)
+  if (username.length === 0 || username.length > 24) {
+    io.to(req.clientId).emit('notify', {
+      message: 'ユーザー名は1〜24文字以内で設定してください',
+      type: 'warning'
+    });
     return res.status(400).json({ error: 'Username length invalid' });
+  }
 
-  if (message.length === 0 || message.length > 800)
+  if (message.length === 0 || message.length > 800) {
+    io.to(req.clientId).emit('notify', {
+      message: 'メッセージは1〜800文字以内で入力してください',
+      type: 'warning'
+    });
     return res.status(400).json({ error: 'Message length invalid' });
+  }
 
   const clientId = req.clientId;
   if (!clientId) return res.status(403).json({ error: 'Invalid token' });
@@ -259,8 +292,13 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
   const rateKey = `ratelimit:msg:${clientId}`;
   const lastSent = await redisClient.get(rateKey);
   const now = Date.now();
-  if (lastSent && now - Number(lastSent) < MESSAGE_RATE_LIMIT_MS)
-    return res.status(429).json({ error: 'Please wait before sending next message' });
+  if (lastSent && now - Number(lastSent) < MESSAGE_RATE_LIMIT_MS) {
+    io.to(clientId).emit('notify', {
+      message: '送信間隔が短すぎます',
+      type: 'warning'
+    });
+    return res.status(429).json({ error: 'Rate limited' });
+  }
   await redisClient.set(rateKey, now, 'PX', MESSAGE_RATE_LIMIT_MS);
 
   // --- スパム・ミュート判定 ---
@@ -328,20 +366,35 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
 // -------------------- 管理API --------------------
 app.post('/api/clear', requireSocketSession, async (req, res) => {
   const { password, roomId, token } = req.body;
-  if (password !== ADMIN_PASS) return res.status(403).json({ error: 'Unauthorized' });
-
+  if (password !== ADMIN_PASS) {
+    io.to(req.clientId).emit('notify', {
+      message: '管理者パスワードが正しくありません',
+      type: 'error'
+    });
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
   const clientId = req.clientId;
   if (!clientId) return res.status(403).json({ error: 'Invalid token' });
 
   const now = Date.now();
   const rateKey = `ratelimit:clear:${clientId}`;
   const last = await redisClient.get(rateKey);
-  if (last && now - Number(last) < 30000)
-    return res.status(429).json({ error: '削除には30秒以上間隔をあけてください' });
-  await redisClient.set(rateKey, now, 'PX', 60000);
+  if (last && now - Number(last) < 30000) {
+    io.to(clientId).emit('notify', {
+      message: '削除操作は30秒以上間隔をあけてください',
+      type: 'warning'
+    });
+    return res.status(429).json({ error: 'Rate limited' });
+  }
+  await redisClient.set(rateKey, now, 'PX', 30000);
 
-  if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId))
+  if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) {
+    io.to(clientId).emit('notify', {
+      message: 'ルームIDが不正です',
+      type: 'error'
+    });
     return res.status(400).json({ error: 'invalid roomId' });
+  }
 
   const username = (await redisClient.get(`username:${clientId}`)) || 'unknown';
   await redisClient.del(`messages:${roomId}`);
@@ -366,7 +419,10 @@ io.on('connection', (socket) => {
       const reissueKey = `ratelimit:reissue:${ip}`;
       const last = await redisClient.get(reissueKey);
       if (last && now - Number(last) < 30000) {
-        socket.emit('authRequired');
+        socket.emit('notify', {
+          message: '短時間に認証要求が多すぎます。しばらくお待ちください',
+          type: 'warning'
+        });
         return;
       }
 
@@ -389,8 +445,16 @@ io.on('connection', (socket) => {
   });
 
   socket.on('joinRoom', async ({ roomId }) => {
-    if (!socket.data.clientId) return socket.disconnect(true);
-    if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return;
+    const clientId = socket.data.clientId;
+    if (!clientId) return socket.disconnect(true);
+
+    if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) {
+      socket.emit('notify', {
+        message: 'ルームIDが不正です',
+        type: 'error'
+      });
+      return;
+    }
 
     if (socket.data.roomId) socket.leave(socket.data.roomId);
 
