@@ -128,6 +128,32 @@ document.addEventListener('DOMContentLoaded', () => {
       .slice(0, 2);
   }
 
+  function setConnectionState(state) {
+    const el = elements.connectionIndicator;
+    if (!el) return;
+
+    el.classList.remove('bg-yellow-400', 'bg-green-500', 'bg-red-500');
+
+    switch (state) {
+      case 'online':
+        el.classList.add('bg-green-500');
+        el.setAttribute('aria-label', 'オンライン');
+        if (elements.connectionText) elements.connectionText.textContent = 'オンライン';
+        break;
+
+      case 'offline':
+        el.classList.add('bg-red-500');
+        el.setAttribute('aria-label', '切断');
+        if (elements.connectionText) elements.connectionText.textContent = '切断';
+        break;
+
+      default:
+        el.classList.add('bg-yellow-400');
+        el.setAttribute('aria-label', '接続中');
+        if (elements.connectionText) elements.connectionText.textContent = '接続中';
+    }
+  }
+
   /* ---------- メッセージ描画 ---------- */
   function createMessage(msg) {
     const self = msg.seed === mySeed;
@@ -319,17 +345,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   socket.on('connect', () => {
-    if (elements.connectionText) elements.connectionText.textContent = 'オンライン';
-    elements.connectionIndicator?.classList.remove('bg-red-500', 'bg-gray-400');
-    elements.connectionIndicator?.classList.add('bg-green-500');
+    setConnectionState('online');
     socket.emit('authenticate', { token: myToken || '', username: myName || '' });
   });
 
   socket.on('disconnect', () => {
-    isSocketAuthenticated = false;
-    if (elements.connectionText) elements.connectionText.textContent = '切断';
-    elements.connectionIndicator?.classList.remove('bg-green-500', 'bg-gray-400');
-    elements.connectionIndicator?.classList.add('bg-red-500');
+    setConnectionState('offline');
+  });
+
+  socket.io.on('reconnect_attempt', () => {
+    setConnectionState('connecting');
   });
 
   socket.on('assignToken', token => {
