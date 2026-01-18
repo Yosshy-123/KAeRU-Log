@@ -4,82 +4,148 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>KAeRU Log</title>
+
+<script src="/tailwindcss.js"></script>
+
 <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="96x96" href="/images/favicon-96x96.png">
-<link rel="stylesheet" href="/css/style.css">
 </head>
-<body>
 
-<div class="chat-app">
-  <header class="chat-header">
-    <div class="app-brand">
-      <img class="logo" src="/images/logo.png" alt="ロゴ" />
-      <div class="app-title">KAeRU Log</div>
+<body class="bg-slate-100 text-slate-800 overflow-hidden">
+
+<div class="w-screen h-screen flex flex-col">
+
+  <!-- Header -->
+  <header class="flex items-center justify-between px-4 sm:px-6 py-3 border-b bg-white shrink-0">
+    <div class="flex items-center gap-3">
+      <img src="/images/logo.png" class="w-8 h-8 sm:w-9 sm:h-9" alt="ロゴ">
+      <h1 class="text-lg sm:text-xl font-semibold tracking-tight">KAeRU Log</h1>
     </div>
 
-    <div class="connection-status">
-      <div id="connectionIndicator" class="status-indicator"></div>
-      <div id="connectionText">接続中...</div>
-      <div id="onlineUserCount">オンライン: -</div>
+    <div class="hidden sm:flex items-center gap-6 text-sm">
+      <div class="flex items-center gap-2">
+        <span id="connectionIndicator" class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+        <span id="connectionText" class="text-slate-600">接続中</span>
+      </div>
+      <div id="onlineUserCount" class="text-slate-500">オンライン: -</div>
     </div>
 
-    <div class="header-actions">
-      <button id="openProfileButton" class="btn">プロフィール</button>
-      <button id="openAdminButton" class="btn danger">管理</button>
+    <div class="flex items-center gap-2">
+      <div class="hidden md:flex gap-2">
+        <button id="openProfileButton" class="px-3 py-1.5 rounded-lg text-sm bg-slate-100 hover:bg-slate-200 transition">
+          プロフィール
+        </button>
+        <button id="openAdminButton" class="px-3 py-1.5 rounded-lg text-sm bg-rose-500 text-white hover:bg-rose-600 transition">
+          管理
+        </button>
+      </div>
+
+      <!-- mobile menu toggle -->
+      <button id="menuToggleButton" class="md:hidden p-2 rounded-lg hover:bg-slate-100">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+      </button>
     </div>
   </header>
 
-  <div id="toastNotification" class="toast-notification" role="status" aria-live="polite"></div>
+  <!-- Mobile slide-over menu -->
+  <div id="mobileMenu"
+       class="fixed inset-y-0 right-0 w-64 bg-white shadow-lg transform translate-x-full transition-transform z-40 md:hidden"
+       aria-hidden="true">
+    <div class="p-4 border-b flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <img src="/images/logo.png" class="w-8 h-8" alt="ロゴ">
+        <div class="text-lg font-semibold">KAeRU Log</div>
+      </div>
+      <button id="mobileMenuClose" class="p-1 rounded hover:bg-slate-100">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
 
-  <main>
-    <div id="messageList" class="message-list" aria-live="polite"></div>
+    <div class="p-4 space-y-3">
+      <button id="mobileOpenProfile" class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50">プロフィール</button>
+      <button id="mobileOpenAdmin" class="w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 text-rose-600">管理</button>
+
+      <div>
+        <label for="roomIdInputMobile" class="block text-xs text-slate-500 mb-1">ルームID</label>
+        <div class="flex gap-2">
+          <input id="roomIdInputMobile" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="ルームIDを入力" maxlength="32">
+          <button id="joinRoomButtonMobile" class="px-3 py-2 rounded-lg bg-emerald-500 text-white">入室</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- overlay for mobile menu -->
+  <div id="mobileMenuOverlay" class="fixed inset-0 bg-black/40 hidden z-30 md:hidden"></div>
+
+  <!-- Toast -->
+  <div id="toastNotification"
+       class="hidden opacity-0 transition-opacity fixed top-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-sm px-4 py-2 rounded-lg shadow z-50">
+  </div>
+
+  <!-- Main -->
+  <main class="flex-1 overflow-y-auto bg-slate-50 px-4 sm:px-6 py-4">
+    <div id="messageList" class="mx-auto w-full max-w-[900px] space-y-4"></div>
   </main>
 
-  <div class="room-selector">
-    <input type="text" id="roomIdInput" placeholder="ルームIDを入力" maxlength="32">
-    <button id="joinRoomButton" class="btn accent">入室</button>
-  </div>
-
-  <footer class="message-composer">
-    <div class="composer-row">
-      <div class="message-input-wrapper">
-        <div class="user-info-box">
-          <div class="user-name-tag"><span>あなた</span><strong id="currentUsernameLabel"></strong></div>
+  <div class="border-t bg-white px-4 sm:px-6 py-3 shrink-0">
+    <div class="mx-auto w-full max-w-[900px]">
+      <div class="flex gap-4 items-end">
+        <div class="flex-1">
+          <div class="text-xs text-slate-500 mb-1">あなた：<strong id="currentUsernameLabel" class="text-slate-700"></strong></div>
+          <textarea id="messageTextarea"
+                    class="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                    rows="2" placeholder="メッセージを入力" maxlength="800"
+                    aria-label="メッセージ入力"></textarea>
         </div>
-        <textarea id="messageTextarea" placeholder="メッセージを入力" maxlength="800"></textarea>
-      </div>
-      <div class="send-area">
-        <button id="sendMessageButton" class="btn accent">送信</button>
+
+        <div class="flex flex-col gap-2 shrink-0">
+          <button id="sendMessageButton" class="h-12 px-5 rounded-xl bg-emerald-500 text-white font-medium hover:bg-emerald-600 transition">
+            送信
+          </button>
+          <!-- desktop-only join room (keeps UI compact) -->
+          <div class="hidden sm:flex gap-2">
+            <input id="roomIdInput" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="ルームIDを入力" maxlength="32">
+            <button id="joinRoomButton" class="px-3 py-2 rounded-lg bg-emerald-500 text-white">入室</button>
+          </div>
+        </div>
       </div>
     </div>
-  </footer>
+  </div>
+
 </div>
 
-<div id="profileModal" class="modal-overlay">
-  <div class="modal-dialog">
-    <h3>プロフィール</h3>
-    <div class="form-field">
-      <label for="profileNameInput">ユーザー名（1〜24文字）</label>
-      <input id="profileNameInput" type="text" maxlength="24" placeholder="例: たろう">
-    </div>
-    <div class="modal-actions">
-      <button id="closeProfileButton" class="btn">閉じる</button>
-      <button id="saveProfileButton" class="btn accent">保存</button>
+<!-- Profile Modal -->
+<div id="profileModal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50" aria-hidden="true">
+  <div class="bg-white rounded-xl w-full max-w-md p-6 shadow-xl">
+    <h3 class="text-lg font-semibold mb-4">プロフィール</h3>
+
+    <label class="block text-sm mb-1">ユーザー名（1〜24文字）</label>
+    <input id="profileNameInput" class="w-full border rounded-lg px-3 py-2 mb-6 focus:ring-2 focus:ring-emerald-400" maxlength="24">
+
+    <div class="flex justify-end gap-2">
+      <button id="closeProfileButton" class="px-4 py-2 rounded-lg bg-slate-100">閉じる</button>
+      <button id="saveProfileButton" class="px-4 py-2 rounded-lg bg-emerald-500 text-white">保存</button>
     </div>
   </div>
 </div>
 
-<div id="adminModal" class="modal-overlay">
-  <div class="modal-dialog">
-    <h3>管理パネル</h3>
-    <div class="form-field">
-      <label for="adminPasswordInput">パスワード</label>
-      <input id="adminPasswordInput" type="password" placeholder="パスワードを入力">
-    </div>
-    <div class="modal-actions">
-      <button id="closeAdminButton" class="btn">閉じる</button>
-      <button id="clearMessagesButton" class="btn danger">全メッセージ削除</button>
+<!-- Admin Modal -->
+<div id="adminModal" class="fixed inset-0 bg-black/40 hidden items-center justify-center z-50" aria-hidden="true">
+  <div class="bg-white rounded-xl w-full max-w-md p-6 shadow-xl">
+    <h3 class="text-lg font-semibold mb-4">管理パネル</h3>
+
+    <label class="block text-sm mb-1">パスワード</label>
+    <input id="adminPasswordInput" type="password" class="w-full border rounded-lg px-3 py-2 mb-6">
+
+    <div class="flex justify-between">
+      <button id="closeAdminButton" class="px-4 py-2 rounded-lg bg-slate-100">閉じる</button>
+      <button id="clearMessagesButton" class="px-4 py-2 rounded-lg bg-rose-500 text-white">全メッセージ削除</button>
     </div>
   </div>
 </div>
