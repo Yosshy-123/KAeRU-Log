@@ -80,10 +80,12 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function showToast(text, duration = 1800) {
-    const toast = document.getElementById('toastNotification');
+    const toast = elements.toastNotification;
     if (!toast) return;
 
     toast.textContent = text;
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-live', 'polite');
     toast.classList.remove('opacity-0', 'scale-90');
     toast.classList.add('opacity-100', 'scale-100');
 
@@ -183,79 +185,81 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function sendMessage() {
-    const text = elements.messageTextarea?.value.trim();
+    const button = elements.sendMessageButton;
+    const textarea = elements.messageTextarea;
+    if (!textarea || !button) return;
+
+    const text = textarea.value.trim();
     if (!text) return;
 
-    if (!myName) {
-      showToast('ユーザー名を設定してください');
-      openProfileModal();
-      return;
-    }
+    button.disabled = true;
+    button.textContent = '送信中…';
 
-    const payload = { roomId, username: myName, message: text, seed: mySeed, token: myToken };
+    try {
+      if (!myName) {
+        showToast('ユーザー名を設定してください');
+        openProfileModal();
+        return;
+      }
 
-    if (!myToken) {
-      if (socket?.connected) {
+      const payload = { roomId, username: myName, message: text, seed: mySeed, token: myToken };
+
+      if (!myToken) {
         pendingMessage = payload;
-        socket.emit('authenticate', { token: '', username: myName });
+        if (socket?.connected) socket.emit('authenticate', { token: '', username: myName });
         showToast('トークンを再取得しています...');
         return;
       }
-      showToast('再接続してください');
-      return;
-    }
 
-    try {
       const res = await fetch(`${SERVER_URL}/api/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        if (res.status === 403) {
-          myToken = '';
-          localStorage.removeItem('chatToken');
-          pendingMessage = payload;
-          if (socket?.connected) socket.emit('authenticate', { token: '', username: myName });
-          showToast('認証エラーのため送信できませんでした');
-        } else {
-          showToast(data.error || '送信に失敗しました');
-        }
+        showToast('送信に失敗しました');
         return;
       }
-      if (elements.messageTextarea) elements.messageTextarea.value = '';
+
+      textarea.value = '';
       focusInput();
     } catch (e) {
       console.error(e);
       showToast('送信に失敗しました');
+    } finally {
+      button.disabled = false;
+      button.textContent = '送信';
     }
   }
 
   /* ---------- モーダル ---------- */
-  function openProfileModal() {
-    if (elements.profileNameInput) elements.profileNameInput.value = myName || '';
-    elements.profileModal?.classList.add('flex');
-    elements.profileModal?.classList.remove('hidden');
-    focusInput(elements.profileNameInput);
+  function openModal(modal) {
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    modal.setAttribute('aria-hidden', 'false');
+    const input = modal.querySelector('input, textarea, button');
+    input?.focus();
+
+    const escHandler = e => { if (e.key === 'Escape') closeModal(modal); };
+    modal._escHandler = escHandler;
+    document.addEventListener('keydown', escHandler);
   }
 
-  function closeProfileModal() {
-    elements.profileModal?.classList.add('hidden');
-    elements.profileModal?.classList.remove('flex');
+  function closeModal(modal) {
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    modal.setAttribute('aria-hidden', 'true');
+    document.removeEventListener('keydown', modal._escHandler);
+    focusInput();
   }
 
-  function openAdminModal() {
-    if (elements.adminPasswordInput) elements.adminPasswordInput.value = '';
-    elements.adminModal?.classList.add('flex');
-    elements.adminModal?.classList.remove('hidden');
-    focusInput(elements.adminPasswordInput);
-  }
-
-  function closeAdminModal() {
-    elements.adminModal?.classList.add('hidden');
-    elements.adminModal?.classList.remove('flex');
-  }
+  function openProfileModal() { openModal(elements.profileModal); }
+  function closeProfileModal() { closeModal(elements.profileModal); }
+  function openAdminModal() { openModal(elements.adminModal); }
+  function closeAdminModal() { closeModal(elements.adminModal); }
 
   async function deleteAllMessages() {
     const password = elements.adminPasswordInput?.value || '';
@@ -275,11 +279,39 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       closeAdminModal();
+      showToast('全メッセージが削除されました');
       focusInput();
     } catch {
       showToast('削除に失敗しました');
     }
   }
+
+  function saveProfile() {
+    const v = (elements.profileNameInput?.value || '').trim().slice(0, 24);
+    if (!v) { showToast('ユーザー名は1〜24文字で設定してください'); return; }
+    myName = v;
+    localStorage.setItem('chat_username', myName);
+    if (elements.currentUsernameLabel) elements.currentUsernameLabel.textContent = myName;
+    closeProfileModal();
+    showToast('プロフィールを保存しました');
+    focusInput();
+  }
+
+  /* ---------- モーダル Enterキー対応 ---------- */
+  function addEnterKeyForModal(modal, action) {
+    if (!modal) return;
+    const input = modal.querySelector('input, textarea');
+    if (!input) return;
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        action();
+      }
+    });
+  }
+
+  addEnterKeyForModal(elements.profileModal, saveProfile);
+  addEnterKeyForModal(elements.adminModal, deleteAllMessages);
 
   /* ---------- Socket.IO ---------- */
   function joinRoom() {
@@ -290,10 +322,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (elements.connectionText) elements.connectionText.textContent = 'オンライン';
     elements.connectionIndicator?.classList.remove('offline');
     elements.connectionIndicator?.classList.add('online');
-    socket.emit('authenticate', { token: myToken || '', username: myName || '' });
-  });
-
-  socket.on('reconnect', () => {
     socket.emit('authenticate', { token: myToken || '', username: myName || '' });
   });
 
@@ -312,14 +340,13 @@ document.addEventListener('DOMContentLoaded', () => {
     pendingMessage = null;
     (async () => {
       try {
-        const res = await fetch(`${SERVER_URL}/api/messages`, {
+        await fetch(`${SERVER_URL}/api/messages`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(resend)
         });
-        if (res.ok && elements.messageTextarea) elements.messageTextarea.value = '';
       } catch (e) {
-        console.error('resend error', e);
+        console.error('再送信エラー', e);
       }
     })();
   });
@@ -338,7 +365,7 @@ document.addEventListener('DOMContentLoaded', () => {
   socket.on('clearMessages', () => {
     messages = [];
     if (elements.messageList) elements.messageList.innerHTML = '';
-    showToast('全メッセージ削除されました');
+    showToast('全メッセージが削除されました');
   });
 
   socket.on('notify', data => {
@@ -370,48 +397,34 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // プロフィール・管理モーダル
   elements.openProfileButton?.addEventListener('click', openProfileModal);
-  elements.closeProfileButton?.addEventListener('click', () => { closeProfileModal(); focusInput(); });
-  elements.saveProfileButton?.addEventListener('click', () => {
-    const v = (elements.profileNameInput?.value || '').trim().slice(0, 24);
-    if (!v) { showToast('ユーザー名は1〜24文字で設定してください'); return; }
-    myName = v;
-    localStorage.setItem('chat_username', myName);
-    if (elements.currentUsernameLabel) elements.currentUsernameLabel.textContent = myName;
-    closeProfileModal();
-    showToast('プロフィールを保存しました');
-    focusInput();
-  });
+  elements.closeProfileButton?.addEventListener('click', closeProfileModal);
+  elements.saveProfileButton?.addEventListener('click', saveProfile);
 
   elements.openAdminButton?.addEventListener('click', openAdminModal);
-  elements.closeAdminButton?.addEventListener('click', () => { closeAdminModal(); focusInput(); });
+  elements.closeAdminButton?.addEventListener('click', closeAdminModal);
   elements.clearMessagesButton?.addEventListener('click', deleteAllMessages);
 
-  // モバイル用
+  // モバイルメニュー
   elements.mobileOpenProfile?.addEventListener('click', openProfileModal);
   elements.mobileOpenAdmin?.addEventListener('click', openAdminModal);
   elements.menuToggleButton?.addEventListener('click', () => {
     elements.mobileMenu?.classList.remove('translate-x-full');
     elements.mobileMenuOverlay?.classList.remove('hidden');
+    elements.mobileMenu?.setAttribute('aria-hidden', 'false');
   });
   elements.mobileMenuClose?.addEventListener('click', () => {
     elements.mobileMenu?.classList.add('translate-x-full');
     elements.mobileMenuOverlay?.classList.add('hidden');
+    elements.mobileMenu?.setAttribute('aria-hidden', 'true');
   });
   elements.mobileMenuOverlay?.addEventListener('click', () => {
     elements.mobileMenu?.classList.add('translate-x-full');
     elements.mobileMenuOverlay?.classList.add('hidden');
-  });
-  elements.joinRoomButtonMobile?.addEventListener('click', () =>
-    changeChatRoom(elements.roomIdInputMobile?.value.trim())
-  );
-
-  elements.chatContainer?.addEventListener('scroll', () => {
-    isAutoScroll = isScrolledToBottom();
+    elements.mobileMenu?.setAttribute('aria-hidden', 'true');
   });
 
-  /* ---------- ルーム移動 ---------- */
+  /* ---------- ルーム切替 ---------- */
   function changeChatRoom(newRoom) {
     if (!/^[a-zA-Z0-9_-]{1,32}$/.test(newRoom)) {
       showToast('ルーム名は英数字・一部記号32文字以内で指定してください');
@@ -421,12 +434,28 @@ document.addEventListener('DOMContentLoaded', () => {
     location.href = `/room/${encodeURIComponent(newRoom)}`;
   }
 
-  elements.joinRoomButton?.addEventListener('click', () => changeChatRoom(elements.roomIdInput.value.trim()));
+  elements.joinRoomButton?.addEventListener('click', () =>
+    changeChatRoom(elements.roomIdInput.value.trim())
+  );
+  elements.joinRoomButtonMobile?.addEventListener('click', () =>
+    changeChatRoom(elements.roomIdInputMobile?.value.trim())
+  );
+
   if (elements.roomIdInput) {
     elements.roomIdInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); elements.joinRoomButton?.click(); }
+      if (e.key === 'Enter') { e.preventDefault(); changeChatRoom(elements.roomIdInput.value.trim()); }
     });
     elements.roomIdInput.value = roomId;
   }
-  if (elements.roomIdInputMobile) elements.roomIdInputMobile.value = roomId;
+  if (elements.roomIdInputMobile) {
+    elements.roomIdInputMobile.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); changeChatRoom(elements.roomIdInputMobile.value.trim()); }
+    });
+    elements.roomIdInputMobile.value = roomId;
+  }
+
+  // 自動スクロール
+  elements.chatContainer?.addEventListener('scroll', () => {
+    isAutoScroll = isScrolledToBottom();
+  });
 });
