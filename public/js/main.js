@@ -79,14 +79,19 @@ document.addEventListener('DOMContentLoaded', () => {
     return result;
   }
 
-  function showToast(text, ms = 1800) {
-    if (!elements.toastNotification) return;
-    elements.toastNotification.textContent = text;
-    elements.toastNotification.classList.add('show');
+  function showToast(text, duration = 1800) {
+    const toast = document.getElementById('toastNotification');
+    if (!toast) return;
+
+    toast.textContent = text;
+    toast.classList.remove('opacity-0', 'scale-90');
+    toast.classList.add('opacity-100', 'scale-100');
+
     clearTimeout(showToast._t);
     showToast._t = setTimeout(() => {
-      elements.toastNotification?.classList.remove('show');
-    }, ms);
+      toast.classList.remove('opacity-100', 'scale-100');
+      toast.classList.add('opacity-0', 'scale-90');
+    }, duration);
   }
 
   function focusInput(target = elements.messageTextarea) {
