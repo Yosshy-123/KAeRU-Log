@@ -26,12 +26,6 @@ redisClient.on('connect', () => console.log('Redis connected'));
 redisClient.on('error', (err) => console.error('Redis error', err));
 
 // -------------------- ヘルパー関数 --------------------
-function isFromCloudflare(headers) {
-    return typeof headers['cf-ray'] === 'string' &&
-           typeof headers['cf-connecting-ip'] === 'string' &&
-           typeof headers['cf-visitor'] === 'string';
-}
-
 function escapeHTML(str = '') {
     return str.replace(/&/g,'&amp;')
               .replace(/</g,'&lt;')
@@ -118,14 +112,12 @@ const io = new SocketIOServer(httpServer, { cors:{ origin:'*' } });
 // -------------------- Socket.IO 認証 --------------------
 io.use((socket, next) => {
     const headers = socket.handshake.headers;
-    if (!isFromCloudflare(headers)) return next(new Error('Forbidden (Not Cloudflare)'));
     if (headers['token-key'] !== TOKEN_KEY) return next(new Error('Forbidden'));
     next();
 });
 
 // -------------------- Express Middleware --------------------
 app.use((req, res, next) => {
-    if (!isFromCloudflare(req.headers)) return res.status(403).send('Forbidden (Not Cloudflare)');
     if (req.headers['token-key'] !== TOKEN_KEY) return res.status(403).send('Forbidden');
     next();
 });
@@ -324,7 +316,6 @@ io.on('connection', socket => {
     socket.on('authenticate', async ({ token, username }) => {
         const now = Date.now();
         const ip = socket.handshake.headers['cf-connecting-ip'];
-        if (!ip || !isFromCloudflare(socket.handshake.headers)) return socket.disconnect(true);
 
         let clientId = token ? await validateAuthToken(token) : null;
         let newToken = null;
