@@ -368,7 +368,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.key === 'Enter') {
         e.preventDefault();
         action();
-		action();
+		close();
       }
     });
   }
@@ -464,7 +464,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   elements.openAdminButton?.addEventListener('click', openAdminModal);
   elements.closeAdminButton?.addEventListener('click', closeAdminModal);
-  elements.clearMessagesButton?.addEventListener('click', deleteAllMessages);
+  elements.clearMessagesButton?.addEventListener('click', () => {
+    deleteAllMessages();
+    closeAdminModal();
+  });
 
   /* ---------- ルーム切替 ---------- */
   function changeChatRoom(newRoom) {
