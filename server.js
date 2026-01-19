@@ -124,19 +124,27 @@ async function validateAuthToken(token) {
 }
 
 // -------------------- Session管理 --------------------
-async function requireSocketSession(req, res, next) {
-  const token = req.body.token || req.headers['authorization'];
-  if (!token) return res.sendStatus(401);
+function createRequireSocketSession(io) {
+  return async function requireSocketSession(req, res, next) {
+    const token =
+      req.body.token ||
+      req.headers['authorization'] ||
+      req.headers['x-auth-token'];
 
-  const clientId = await validateAuthToken(token);
-  if (!clientId) {
+    if (!token) {
+      return res.sendStatus(401);
+    }
+
+    const clientId = await validateAuthToken(token);
+    if (!clientId) {
       const possibleClientId = token?.split('.')?.[0];
       emitToast(io, possibleClientId, '認証に失敗しました', 'error');
       return res.sendStatus(403);
-  }
+    }
 
-  req.clientId = clientId;
-  next();
+    req.clientId = clientId;
+    next();
+  };
 }
 
 // -------------------- Express & Socket.IO --------------------
@@ -148,6 +156,7 @@ app.set('trust proxy', true);
 
 const httpServer = http.createServer(app);
 const io = new SocketIOServer(httpServer, { cors: { origin: '*' } });
+const requireSocketSession = createRequireSocketSession(io);
 
 // -------------------- Socket.IO 認証 --------------------
 io.use((socket, next) => {
@@ -370,7 +379,7 @@ app.post('/api/clear', requireSocketSession, async (req, res) => {
 io.on('connection', (socket) => {
   socket.on('authenticate', async ({ token, username }) => {
     const now = Date.now();
-    const ip = socket.handshake.headers['cf-connecting-ip'];
+    const ip = socket.handshake.headers['cf-connecting-ip']; // cloudflare 前提
 
     let clientId = token ? await validateAuthToken(token) : null;
     let newToken = null;
