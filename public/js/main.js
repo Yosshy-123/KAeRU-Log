@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let mySeed = localStorage.getItem('chat_seed');
   let isAutoScroll = true;
   let pendingMessage = null;
+  let activeModal = null;
   let isSocketAuthenticated = false;
 
   if (!mySeed) {
@@ -287,6 +288,9 @@ document.addEventListener('DOMContentLoaded', () => {
   /* ---------- モーダル ---------- */
   function openModal(modal) {
     if (!modal) return;
+    if (activeModal && activeModal !== modal) {
+      closeModal(activeModal);
+    }
     modal.classList.add('show');
     modal.setAttribute('aria-hidden', 'false');
     const input = modal.querySelector('input, textarea, button');
@@ -302,6 +306,9 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.classList.remove('show');
     modal.setAttribute('aria-hidden', 'true');
     document.removeEventListener('keydown', modal._escHandler);
+    if (activeModal === modal) {
+      activeModal = null;
+    }
     focusInput();
   }
 
