@@ -425,7 +425,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (elements.messageList) elements.messageList.innerHTML = '';
   });
 
-  socket.on('notify', data => {
+  socket.on('toast', data => {
     const msg = typeof data === 'string' ? data : data?.message;
     if (msg) showToast(msg);
   });
