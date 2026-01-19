@@ -58,6 +58,16 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.currentUsernameLabel.textContent = myName || '未設定';
   }
 
+  if (elements.roomIdInput && roomId) {
+    elements.roomIdInput.value = roomId;
+  }
+
+  if (elements.roomIdInput) {
+    elements.roomIdInput.addEventListener('focus', () => {
+      selectAll(elements.roomIdInput);
+    });
+  }
+
   /* ---------- ユーティリティ ---------- */
   function generateUserSeed(length) {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -68,6 +78,13 @@ document.addEventListener('DOMContentLoaded', () => {
       result += chars[array[i] % chars.length];
     }
     return result;
+  }
+
+  function selectAll(input) {
+    if (!input) return;
+    setTimeout(() => {
+      input.select();
+    }, 0);
   }
 
   function showToast(text, duration = 1800) {
@@ -280,9 +297,9 @@ document.addEventListener('DOMContentLoaded', () => {
   function openProfileModal() {
     if (elements.profileNameInput) {
       elements.profileNameInput.value = myName || '';
-      setTimeout(() => elements.profileNameInput.select(), 0);
     }
     openModal(elements.profileModal);
+    selectAll(elements.profileNameInput);
   }
   function closeProfileModal() { closeModal(elements.profileModal); }
   function openAdminModal() { openModal(elements.adminModal); }
