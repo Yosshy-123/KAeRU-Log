@@ -345,9 +345,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     } catch (e) {
       console.error(e);
-    } finally {
-      closeAdminModal();
-      focusInput();
     }
   }
 
@@ -363,7 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /* ---------- モーダル Enterキー対応 ---------- */
-  function addEnterKeyForModal(modal, action) {
+  function addEnterKeyForModal(modal, action, close) {
     if (!modal) return;
     const input = modal.querySelector('input, textarea');
     if (!input) return;
@@ -371,12 +368,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.key === 'Enter') {
         e.preventDefault();
         action();
+		action();
       }
     });
   }
 
   addEnterKeyForModal(elements.profileModal, saveProfile);
-  addEnterKeyForModal(elements.adminModal, deleteAllMessages);
+  addEnterKeyForModal(elements.adminModal, deleteAllMessages, closeAdminModal);
 
   /* ---------- Socket.IO ---------- */
   function joinRoom() {
