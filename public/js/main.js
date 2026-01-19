@@ -293,6 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     modal.classList.add('show');
     modal.setAttribute('aria-hidden', 'false');
+    activeModal = modal;
     const input = modal.querySelector('input, textarea, button');
     input?.focus();
 
