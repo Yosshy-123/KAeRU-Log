@@ -338,19 +338,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      const res = await fetch(`${SERVER_URL}/api/clear`, {
+      await fetch(`${SERVER_URL}/api/clear`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password, roomId, token: myToken })
       });
-      const data = await res.json().catch(() => ({}));
     } catch (e) {
       console.error(e);
     } finally {
       closeAdminModal();
       focusInput();
     }
-}
+  }
 
   function saveProfile() {
     const v = (elements.profileNameInput?.value || '').trim().slice(0, 24);
