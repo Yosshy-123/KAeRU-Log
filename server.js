@@ -34,14 +34,6 @@ const AUTH_TOKEN_MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours
 const SESSION_TTL_SEC = 60 * 60 * 24; // 24 hours
 
 // -------------------- ヘルパー関数 --------------------
-function isFromCloudflare(headers = {}) {
-  return (
-    typeof headers['cf-ray'] === 'string' &&
-    typeof headers['cf-connecting-ip'] === 'string' &&
-    typeof headers['cf-visitor'] === 'string'
-  );
-}
-
 function escapeHTML(str = '') {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -160,14 +152,12 @@ const io = new SocketIOServer(httpServer, { cors: { origin: '*' } });
 // -------------------- Socket.IO 認証 --------------------
 io.use((socket, next) => {
   const headers = socket.handshake.headers;
-  if (!isFromCloudflare(headers)) return next(new Error('Forbidden'));
   if (headers['token-key'] !== TOKEN_KEY) return next(new Error('Forbidden'));
   next();
 });
 
 // -------------------- Express Middleware --------------------
 app.use((req, res, next) => {
-  if (!isFromCloudflare(req.headers)) return res.sendStatus(403).send('Forbidden');
   if (req.headers['token-key'] !== TOKEN_KEY) return res.sendStatus(403).send('Forbidden');
   next();
 });
@@ -374,7 +364,6 @@ io.on('connection', (socket) => {
   socket.on('authenticate', async ({ token, username }) => {
     const now = Date.now();
     const ip = socket.handshake.headers['cf-connecting-ip'];
-    if (!ip || !isFromCloudflare(socket.handshake.headers)) return socket.disconnect(true);
 
     let clientId = token ? await validateAuthToken(token) : null;
     let newToken = null;
