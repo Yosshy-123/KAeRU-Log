@@ -63,8 +63,19 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (elements.roomIdInput) {
+    if (roomId) {
+      elements.roomIdInput.value = roomId;
+    }
+
     elements.roomIdInput.addEventListener('focus', () => {
       selectAll(elements.roomIdInput);
+    });
+
+    elements.roomIdInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        changeChatRoom(elements.roomIdInput.value.trim());
+      }
     });
   }
 
