@@ -158,7 +158,7 @@ io.use((socket, next) => {
 
 // -------------------- Express Middleware --------------------
 app.use((req, res, next) => {
-  if (req.headers['token-key'] !== TOKEN_KEY) return res.sendStatus(403).send('Forbidden');
+  if (req.headers['token-key'] !== TOKEN_KEY) return res.status(403).send('Forbidden');
   next();
 });
 
