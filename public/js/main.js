@@ -336,6 +336,7 @@ document.addEventListener('DOMContentLoaded', () => {
       showToast('パスワードを入力してください');
       return;
     }
+
     try {
       const res = await fetch(`${SERVER_URL}/api/clear`, {
         method: 'POST',
@@ -343,13 +344,13 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify({ password, roomId, token: myToken })
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        return;
-      }
+    } catch (e) {
+      console.error(e);
+    } finally {
       closeAdminModal();
       focusInput();
-    } catch {}
-  }
+    }
+}
 
   function saveProfile() {
     const v = (elements.profileNameInput?.value || '').trim().slice(0, 24);
