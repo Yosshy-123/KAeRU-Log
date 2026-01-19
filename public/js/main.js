@@ -321,7 +321,13 @@ document.addEventListener('DOMContentLoaded', () => {
     selectAll(elements.profileNameInput);
   }
   function closeProfileModal() { closeModal(elements.profileModal); }
-  function openAdminModal() { openModal(elements.adminModal); }
+  function openAdminModal() {
+		if (elements.adminPasswordInput) {
+      elements.adminPasswordInput.value = '';
+    }
+		openModal(elements.adminModal);
+		focusMessageInput(elements.adminPasswordInput);
+	}
   function closeAdminModal() { closeModal(elements.adminModal); }
 
   async function deleteAllMessages() {
