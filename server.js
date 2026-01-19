@@ -280,6 +280,8 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
       if (intervalCount >= 3) {
         await redisClient.set(`msg:mute:${clientId}`, '1', 'EX', MUTE_DURATION_SEC);
         await redisClient.del(repeatIntervalKey);
+
+        logUserAction(clientId, 'messageMutedBySpam', { roomId, username });
         emitToast(
             io,
             clientId,
@@ -335,24 +337,29 @@ app.post('/api/clear', requireSocketSession, async (req, res) => {
   const clientId = req.clientId;
   if (!clientId) return res.sendStatus(403);
 
+  const username = await redisClient.get(`username:${clientId}`);
   if (password !== ADMIN_PASS) {
-      emitToast(io, clientId, '管理者パスワードが正しくありません', 'error');
-      return res.sendStatus(403);
+    logUserAction(clientId, 'InvalidAdminPassword', { roomId, username });
+
+    emitToast(io, clientId, '管理者パスワードが正しくありません', 'error');
+    return res.sendStatus(403);
   }
 
   const now = Date.now();
   const rateKey = `ratelimit:clear:${clientId}`;
   const last = await redisClient.get(rateKey);
+
   if (last && now - Number(last) < 30000) {
-      emitToast(io, clientId, '削除操作は30秒以上間隔をあけてください', 'warning');
-      return res.sendStatus(429);
+    logUserAction(clientId, 'clearMessagesRateLimited', { roomId, username });
+    emitToast(io, clientId, '削除操作は30秒以上間隔をあけてください', 'warning');
+    return res.sendStatus(429);
   }
+
   await redisClient.set(rateKey, now, 'PX', 60000);
 
   if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId))
     return res.sendStatus(400);
 
-  const username = (await redisClient.get(`username:${clientId}`)) || 'unknown';
   await redisClient.del(`messages:${roomId}`);
   io.to(roomId).emit('clearMessages');
   emitToast(io, clientId, '全メッセージを削除しました', 'info');
