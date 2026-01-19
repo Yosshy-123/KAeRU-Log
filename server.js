@@ -355,8 +355,8 @@ app.post('/api/clear', requireSocketSession, async (req, res) => {
   const username = (await redisClient.get(`username:${clientId}`)) || 'unknown';
   await redisClient.del(`messages:${roomId}`);
   io.to(roomId).emit('clearMessages');
+  emitToast(io, clientId, '全メッセージを削除しました', 'info');
   logUserAction(clientId, 'clearMessages', { roomId, username });
-  res.json({ message: '全メッセージ削除しました' });
 });
 
 // -------------------- Socket.IO --------------------
