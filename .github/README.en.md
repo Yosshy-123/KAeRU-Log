@@ -53,7 +53,6 @@ This application is typically **accessed via Cloudflare Workers**.
 ### 1. Configure Redis
 
 KAeRU Log uses **Redis** for chat logs and state management.
-Redis configuration is mandatory for production environments and the `redis-only` variant.
 
 Please prepare Redis using one of the following methods:
 
