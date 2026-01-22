@@ -7,15 +7,8 @@
 
 ---
 
-[Read in English](README.en.md)
-
----
-
 KAeRU Log は、Node.js を使って構築した軽量チャットアプリです。  
-このアプリは通常、 **Cloudflare Workers を経由してアクセス** されます。
-
-* アプリ本体は Render でホストします。
-* Cloudflare Workers がリバースプロキシとしてリクエストを中継します。
+このアプリは **Render でホスト** されます。
 
 ---
 
@@ -38,8 +31,6 @@ KAeRU Log は、Node.js を使って構築した軽量チャットアプリで�
 │     ├─ favicon-16x16.png
 │     ├─ favicon-32x32.png
 │     └─ favicon-96x96.png
-├─ src
-│  └─ worker.js
 ├─ server.js
 ├─ package.json
 ├─ LICENSE
@@ -61,26 +52,26 @@ KAeRU Log では、チャットログや状態管理のために **Redis** を�
 1. Render ダッシュボードで **New** → **Key Value** を選択します。
 2. 任意のサービス名を設定します。
 3. **Maxmemory Policy** を **noeviction** に設定します。
-4. リージョンを選択し、プランを選択します。
+4. リージョンとプランを選択します。
 5. 作成完了後、Redis の **Internal Key Value URL** を控えておきます。
 
 #### 外部 Redis サービスを使う
 
-以下のような外部サービスなども利用できます。
+以下のような外部サービスも利用可能です。
 
 * [Upstash](https://console.upstash.com/redis)
 * [Redis Cloud](https://cloud.redis.io/#/databases)
 
 いずれの場合も、**接続用の Redis URL** を取得してください。
 
-### 2. アプリ本体をデプロイ
+---
 
-Render を使用してアプリ本体をデプロイします。
+### 2. アプリ本体をデプロイ
 
 1. Render ダッシュボードで **New** → **Web Service** を選択します。
 2. GitHub リポジトリとして `https://github.com/Yosshy-123/KAeRU-Log.git` を設定します。
 3. 任意のサービス名を設定します。
-4. リージョンを選択し、プランを選択します。
+4. リージョンとプランを選択します。
 5. **Environment** を Node (v22+) に設定します。
 6. **Build Command** を設定します。
 
@@ -100,32 +91,13 @@ npm start
 REDIS_URL=<Redis の URL>
 ADMIN_PASS=<管理者パスワード>
 SECRET_KEY=<クライアントID生成用シークレットキー>
-TOKEN_KEY=<トークンキー>
 ```
-
-9. デプロイ完了後、URL を控えておきます。
-
-### 3. Cloudflare Workers を設定
-
-1. `src`ディレクトリの`worker.js` をそのまま使用します。
-2. Workers 環境変数を設定します。
-
-```env
-TARGET_URL=<Render のアプリ本体 URL>
-TOKEN_KEY=<アプリ本体と同じトークンキー>
-```
-
-3. デプロイします。
-
-### 4. アクセス
-
-Cloudflare Workers の URL からアクセスしてください。
 
 ---
 
 ## ライブデモ
 
-[https://kaeru-log.yosshy-123.workers.dev/](https://kaeru-log.yosshy-123.workers.dev/)
+[https://kaeru-log.onrender.com/](https://kaeru-log.onrender.com/)
 
 ---
 
