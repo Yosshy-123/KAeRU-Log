@@ -15,7 +15,6 @@ try {
 // -------------------- 環境変数 --------------------
 const PORT = process.env.PORT || 3000;
 const REDIS_URL = process.env.REDIS_URL;
-const TOKEN_KEY = process.env.TOKEN_KEY || 'supersecretkey1234';
 const SECRET_KEY = process.env.SECRET_KEY || 'supersecretkey1234';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'adminkey1234';
 
@@ -73,6 +72,24 @@ function logUserAction(clientId, action, extra = {}) {
   console.log(`[${time}] [User:${clientId}]${username} Action: ${action}${extraStr}`);
 }
 
+async function scanKeys(pattern) {
+  let cursor = '0';
+  const keys = [];
+
+  do {
+    const [nextCursor, batch] = await redisClient.scan(
+      cursor,
+      'MATCH', pattern,
+      'COUNT', 100
+    );
+
+    cursor = nextCursor;
+    keys.push(...batch);
+  } while (cursor !== '0');
+
+  return keys;
+}
+
 // -------------------- Toast通知 --------------------
 function emitToast(io, target, message, type = 'info') {
   if (!target) return;
@@ -115,7 +132,15 @@ async function validateAuthToken(token) {
   const hmac = crypto.createHmac('sha256', SECRET_KEY);
   hmac.update(`${clientId}.${timestamp}`);
   const expectedSignature = hmac.digest('hex');
-  if (expectedSignature !== signature) return null;
+  const expected = Buffer.from(expectedSignature, 'hex');
+  const actual   = Buffer.from(signature, 'hex');
+
+  if (
+    expected.length !== actual.length ||
+    !crypto.timingSafeEqual(expected, actual)
+  ) {
+    return null;
+  }
 
   const storedToken = await redisClient.get(`token:${clientId}`);
   if (storedToken !== token) return null;
@@ -126,12 +151,9 @@ async function validateAuthToken(token) {
 // -------------------- Session管理 --------------------
 function createRequireSocketSession(io) {
   return async function requireSocketSession(req, res, next) {
-    const token =
-      req.body.token ||
-      req.headers['authorization'] ||
-      req.headers['x-auth-token'];
+    const token = req.body?.token;
 
-    if (!token) {
+    if (typeof token !== 'string') {
       return res.sendStatus(401);
     }
 
@@ -158,19 +180,6 @@ const httpServer = http.createServer(app);
 const io = new SocketIOServer(httpServer, { cors: { origin: '*' } });
 const requireSocketSession = createRequireSocketSession(io);
 
-// -------------------- Socket.IO 認証 --------------------
-io.use((socket, next) => {
-  const headers = socket.handshake.headers;
-  if (headers['token-key'] !== TOKEN_KEY) return next(new Error('Forbidden'));
-  next();
-});
-
-// -------------------- Express Middleware --------------------
-app.use((req, res, next) => {
-  if (req.headers['token-key'] !== TOKEN_KEY) return res.status(403).send('Forbidden');
-  next();
-});
-
 // -------------------- 月次Redisリセット --------------------
 async function monthlyRedisReset(ioInstance) {
   const now = new Date();
@@ -187,8 +196,8 @@ async function monthlyRedisReset(ioInstance) {
 
     console.log('[Redis] Month changed, flushdb start');
 
-    const keys = await redisClient.keys('messages:*');
-    const targetRoomIds = keys.map((k) => k.replace('messages:', ''));
+    const keys = await scanKeys('messages:*');
+    const targetRoomIds = keys.map((k) => k.slice('messages:'.length));
 
     await redisClient.flushdb();
     await redisClient.set('system:current_month', currentMonth);
@@ -379,7 +388,9 @@ app.post('/api/clear', requireSocketSession, async (req, res) => {
 io.on('connection', (socket) => {
   socket.on('authenticate', async ({ token, username }) => {
     const now = Date.now();
-    const ip = socket.handshake.headers['cf-connecting-ip']; // cloudflare 前提
+    const ip =
+      socket.handshake.headers['x-forwarded-for']?.split(',')[0] ||
+      socket.handshake.address;
 
     let clientId = token ? await validateAuthToken(token) : null;
     let newToken = null;
