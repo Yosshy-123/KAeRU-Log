@@ -114,6 +114,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }, duration);
   }
 
+  function showToastserver(text, duration = 1800) {
+    const toast = elements.toastNotification;
+    if (!toast) return;
+
+    toast.textContent = text;
+    toast.setAttribute('role', 'status');
+    toast.setAttribute('aria-live', 'polite');
+
+    toast.classList.add('server');
+	toast.classList.add('show');
+
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => {
+      toast.classList.remove('server');
+	  toast.classList.remove('show');
+    }, duration);
+  }
+
   function focusInput(target = elements.messageTextarea) {
     if (!target) return;
     target.focus();
@@ -454,12 +472,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!message) return;
 
     if (scope === 'user') {
-      showToast(message);
+      showToastserver(message);
       return;
     }
 
     if (scope === 'room') {
-      showToast(message);
+      showToastserver(message);
       return;
     }
   });
