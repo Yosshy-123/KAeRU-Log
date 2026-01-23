@@ -19,7 +19,6 @@ document.addEventListener('DOMContentLoaded', () => {
   let isAutoScroll = true;
   let pendingMessage = null;
   let activeModal = null;
-  let isSocketAuthenticated = false;
 
   if (!mySeed) {
     mySeed = generateUserSeed(40);
@@ -326,7 +325,7 @@ document.addEventListener('DOMContentLoaded', () => {
       elements.adminPasswordInput.value = '';
     }
 		openModal(elements.adminModal);
-		focusMessageInput(elements.adminPasswordInput);
+		focusInput(elements.adminPasswordInput);
 	}
   function closeAdminModal() { closeModal(elements.adminModal); }
 
@@ -368,7 +367,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.key === 'Enter') {
         e.preventDefault();
         action();
-		close();
+		if (typeof close === 'function') close();
       }
     });
   }
@@ -430,8 +429,20 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   socket.on('toast', data => {
-    const msg = typeof data === 'string' ? data : data?.message;
-    if (msg) showToast(msg);
+    if (!data || typeof data !== 'object') return;
+
+    const { scope, message } = data;
+    if (!message) return;
+
+    if (scope === 'user') {
+      showToast(message);
+      return;
+    }
+
+    if (scope === 'room') {
+      showToast(message);
+      return;
+    }
   });
 
   socket.on('roomUserCount', count => {
