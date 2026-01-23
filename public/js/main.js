@@ -59,14 +59,8 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.currentUsernameLabel.textContent = myName || '未設定';
   }
 
-  if (elements.roomIdInput && roomId) {
-    elements.roomIdInput.value = roomId;
-  }
-
   if (elements.roomIdInput) {
-    if (roomId) {
-      elements.roomIdInput.value = roomId;
-    }
+    elements.roomIdInput.value = roomId || '';
 
     elements.roomIdInput.addEventListener('focus', () => {
       selectAll(elements.roomIdInput);
