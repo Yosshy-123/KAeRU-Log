@@ -286,10 +286,6 @@ textarea {
 	opacity: 0;
 	pointer-events: none;
 	transition: opacity 0.2s ease, transform 0.2s ease;
-	z-index: 999998;
-}
-
-.toast-notification.server {
 	z-index: 999999;
 }
 
