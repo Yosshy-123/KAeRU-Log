@@ -15,7 +15,6 @@ try {
 // -------------------- 環境変数 --------------------
 const PORT = process.env.PORT || 3000;
 const REDIS_URL = process.env.REDIS_URL;
-const SECRET_KEY = process.env.SECRET_KEY || 'supersecretkey1234';
 const ADMIN_PASS = process.env.ADMIN_PASS || 'adminkey1234';
 
 if (!REDIS_URL) {
@@ -29,7 +28,6 @@ redisClient.on('connect', () => console.log('Redis connected'));
 redisClient.on('error', (err) => console.error('Redis error', err));
 
 // -------------------- アプリ設定 --------------------
-const AUTH_TOKEN_MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours
 const SESSION_TTL_SEC = 60 * 60 * 24; // 24 hours
 
 // -------------------- ヘルパー関数 --------------------
@@ -91,10 +89,11 @@ async function scanKeys(pattern) {
 }
 
 // -------------------- Toast通知 --------------------
-function emitUserToast(io, clientId, message, type = 'info') {
-  if (!clientId) return;
+async function emitUserToast(io, clientId, message, type = 'info') {
+  const socketId = await redisClient.get(`socket:${clientId}`);
+  if (!socketId) return;
 
-  io.to(clientId).emit('toast', {
+  io.to(socketId).emit('toast', {
     scope: 'user',
     message,
     type,
@@ -123,47 +122,21 @@ function createSystemMessage(htmlMessage) {
   };
 }
 
-function createAuthToken(clientId) {
-  const timestamp = Date.now();
-  const hmac = crypto.createHmac('sha256', SECRET_KEY);
-  hmac.update(`${clientId}.${timestamp}`);
-  return `${clientId}.${timestamp}.${hmac.digest('hex')}`;
+function createAuthToken() {
+  return crypto.randomBytes(32).toString('hex');
 }
 
 async function validateAuthToken(token) {
   if (!token) return null;
 
-  const parts = token.split('.');
-  if (parts.length !== 3) return null;
-
-  const [clientId, timestampStr, signature] = parts;
-  const timestamp = Number(timestampStr);
-  if (!timestamp) return null;
-  if (Date.now() - timestamp > AUTH_TOKEN_MAX_AGE) return null;
-
-  const hmac = crypto.createHmac('sha256', SECRET_KEY);
-  hmac.update(`${clientId}.${timestamp}`);
-  const expectedSignature = hmac.digest('hex');
-  const expected = Buffer.from(expectedSignature, 'hex');
-  const actual   = Buffer.from(signature, 'hex');
-
-  if (
-    expected.length !== actual.length ||
-    !crypto.timingSafeEqual(expected, actual)
-  ) {
-    return null;
-  }
-
-  const storedToken = await redisClient.get(`token:${clientId}`);
-  if (storedToken !== token) return null;
-
-  return clientId;
+  const clientId = await redisClient.get(`token:${token}`);
+  return clientId || null;
 }
 
 // -------------------- Session管理 --------------------
 function createRequireSocketSession(io) {
   return async function requireSocketSession(req, res, next) {
-    const token = req.body?.token;
+    const token = req.headers['authorization']?.replace(/^Bearer\s+/i, '');
 
     if (typeof token !== 'string') {
       return res.sendStatus(401);
@@ -171,8 +144,6 @@ function createRequireSocketSession(io) {
 
     const clientId = await validateAuthToken(token);
     if (!clientId) {
-      const possibleClientId = token?.split('.')?.[0];
-      emitUserToast(io, possibleClientId, '認証に失敗しました', 'error');
       return res.sendStatus(403);
     }
 
@@ -257,9 +228,9 @@ app.get('/api/messages/:roomId', async (req, res) => {
 });
 
 app.post('/api/messages', requireSocketSession, async (req, res) => {
-  const { username, message, token, seed, roomId } = req.body;
+  const { username, message, seed, roomId } = req.body;
 
-  if (!roomId || !username || !message || !token || !seed)
+  if (!roomId || !username || !message || !seed)
     return res.sendStatus(400);
 
   if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId))
@@ -337,7 +308,6 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
     username: escapeHTML(username),
     message: escapeHTML(message),
     time: formatJSTTime(new Date()),
-    clientId,
     seed,
   };
 
@@ -362,7 +332,7 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
 
 // -------------------- 管理API --------------------
 app.post('/api/clear', requireSocketSession, async (req, res) => {
-  const { password, roomId, token } = req.body;
+  const { password, roomId } = req.body;
 
   const clientId = req.clientId;
   if (!clientId) return res.sendStatus(403);
@@ -417,11 +387,18 @@ io.on('connection', (socket) => {
       }
 
       clientId = crypto.randomUUID();
-      newToken = createAuthToken(clientId);
-      await redisClient.set(`token:${clientId}`, newToken, 'EX', 86400);
+      newToken = createAuthToken();
+      await redisClient.set(`token:${newToken}`, clientId, 'EX', 86400);
       await redisClient.set(reissueKey, now, 'PX', 30000);
       socket.emit('assignToken', newToken);
     }
+
+    await redisClient.set(
+      `socket:${clientId}`,
+      socket.id,
+      'EX',
+      SESSION_TTL_SEC
+    );
 
     socket.data.clientId = clientId;
 
@@ -430,7 +407,6 @@ io.on('connection', (socket) => {
     }
 
     socket.emit('authenticated');
-    socket.join(clientId);
   });
 
   socket.on('joinRoom', async ({ roomId }) => {
@@ -451,6 +427,9 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', async () => {
+    if (socket.data?.clientId) {
+      await redisClient.del(`socket:${socket.data.clientId}`);
+    }
     const roomId = socket.data.roomId;
     if (roomId) {
       const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
