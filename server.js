@@ -6,12 +6,6 @@ const crypto = require('crypto');
 const Redis = require('ioredis');
 const cron = require('node-cron');
 
-try {
-  require('dotenv').config();
-} catch {
-  console.warn('dotenv not found, using default values');
-}
-
 // -------------------- 環境変数 --------------------
 const PORT = process.env.PORT || 3000;
 const REDIS_URL = process.env.REDIS_URL;
@@ -28,7 +22,11 @@ redisClient.on('connect', () => console.log('Redis connected'));
 redisClient.on('error', (err) => console.error('Redis error', err));
 
 // -------------------- アプリ設定 --------------------
-const SESSION_TTL_SEC = 60 * 60 * 24; // 24 hours
+const SESSION_TTL_SEC = 60 * 60 * 24; // 24時間
+const BASE_MUTE_SEC = 30;
+const MAX_MUTE_SEC  = 60 * 10;        // 最大ミュート時間（10分）
+const MESSAGE_RATE_LIMIT_MS = 1000;
+const REPEAT_LIMIT = 3;
 
 // -------------------- ヘルパー関数 --------------------
 function escapeHTML(str = '') {
@@ -131,7 +129,7 @@ async function validateAuthToken(token) {
 }
 
 // -------------------- Session管理 --------------------
-function createRequireSocketSession(io) {
+function createRequireSocketSession() {
   return async function requireSocketSession(req, res, next) {
     const token = req.headers['authorization']?.replace(/^Bearer\s+/i, '');
 
@@ -158,7 +156,7 @@ app.set('trust proxy', true);
 
 const httpServer = http.createServer(app);
 const io = new SocketIOServer(httpServer, { cors: { origin: '*' } });
-const requireSocketSession = createRequireSocketSession(io);
+const requireSocketSession = createRequireSocketSession();
 
 // -------------------- 月次Redisリセット --------------------
 async function monthlyRedisReset(ioInstance) {
@@ -242,10 +240,6 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
   const clientId = req.clientId;
   if (!clientId) return res.sendStatus(403);
 
-  const MESSAGE_RATE_LIMIT_MS = 1000;
-  const REPEAT_LIMIT = 3;
-  const MUTE_DURATION_SEC = 30;
-
   const muteKey = `msg:mute:${clientId}`;
   if (await redisClient.exists(muteKey))
     return res.sendStatus(429);
@@ -274,32 +268,57 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
 
     if (Math.abs(interval - lastInterval) < 250) {
       intervalCount++;
-      await redisClient.set(repeatIntervalKey, intervalCount, 'EX', MUTE_DURATION_SEC);
-      if (intervalCount >= 3) {
-        await redisClient.set(`msg:mute:${clientId}`, '1', 'EX', MUTE_DURATION_SEC);
+      await redisClient.set(repeatIntervalKey, intervalCount, 'EX', BASE_MUTE_SEC);
+      await redisClient.set(`msg:last_interval:${clientId}`, interval, 'EX', BASE_MUTE_SEC);
+
+      if (intervalCount >= REPEAT_LIMIT) {
+        const muteLevelKey = `msg:mute_level:${clientId}`;
+        const lastMuteKey = `msg:last_mute:${clientId}`;
+        const lastMuteTime = Number(await redisClient.get(lastMuteKey)) || 0;
+
+        let muteLevel = Number(await redisClient.get(muteLevelKey)) || 0;
+        if (now - lastMuteTime <= 30000) {
+          muteLevel += 1;
+        } else {
+          muteLevel = 0;
+        }
+
+        const muteSeconds = Math.min(BASE_MUTE_SEC * (2 ** muteLevel), MAX_MUTE_SEC);
+
+        await redisClient.set(`msg:mute:${clientId}`, '1', 'EX', muteSeconds);
+        await redisClient.set(muteLevelKey, muteLevel, 'EX', muteSeconds);
+        await redisClient.set(lastMuteKey, now, 'EX', muteSeconds);
+
         await redisClient.del(repeatIntervalKey);
 
-        logUserAction(clientId, 'messageMutedBySpam', { roomId, username });
+        logUserAction(clientId, 'messageMutedBySpam', {
+          roomId,
+          username,
+          muteSeconds,
+          muteLevel,
+        });
+
         emitUserToast(
-            io,
-            clientId,
-            `スパムを検知したため${MUTE_DURATION_SEC}秒間ミュートされました`,
-            'warning'
+          io,
+          clientId,
+          `スパムを検知したため${muteSeconds}秒間ミュートされました`,
+          'warning'
         );
+
         return res.sendStatus(429);
       }
     } else {
       intervalCount = 1;
-      await redisClient.set(repeatIntervalKey, intervalCount, 'EX', MUTE_DURATION_SEC);
+      await redisClient.set(repeatIntervalKey, intervalCount, 'EX', BASE_MUTE_SEC);
+      await redisClient.set(`msg:last_interval:${clientId}`, interval, 'EX', BASE_MUTE_SEC);
     }
-
-    await redisClient.set(`msg:last_interval:${clientId}`, interval, 'EX', MUTE_DURATION_SEC);
   } else {
-    await redisClient.set(repeatIntervalKey, 1, 'EX', MUTE_DURATION_SEC);
+    await redisClient.set(repeatIntervalKey, 1, 'EX', BASE_MUTE_SEC);
+    await redisClient.set(`msg:last_interval:${clientId}`, 0, 'EX', BASE_MUTE_SEC);
   }
 
-  await redisClient.set(lastMessageKey, message, 'EX', MUTE_DURATION_SEC);
-  await redisClient.set(lastTimeKey, now, 'EX', MUTE_DURATION_SEC);
+  await redisClient.set(lastMessageKey, message, 'EX', BASE_MUTE_SEC);
+  await redisClient.set(lastTimeKey, now, 'EX', BASE_MUTE_SEC);
 
   const storedMessage = {
     username: escapeHTML(username),
@@ -311,10 +330,10 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
   try {
     const roomKey = `messages:${roomId}`;
     const luaScript = `
-            redis.call('RPUSH', KEYS[1], ARGV[1])
-            redis.call('LTRIM', KEYS[1], -1000, -1)
-            return 1
-        `;
+      redis.call('RPUSH', KEYS[1], ARGV[1])
+      redis.call('LTRIM', KEYS[1], -1000, -1)
+      return 1
+    `;
     await redisClient.eval(luaScript, 1, roomKey, JSON.stringify(storedMessage));
 
     io.to(roomId).emit('newMessage', storedMessage);
