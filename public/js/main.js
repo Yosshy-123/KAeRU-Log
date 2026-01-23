@@ -19,6 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let isAutoScroll = true;
   let pendingMessage = null;
   let activeModal = null;
+  let isServerToastActive = false;
 
   if (!mySeed) {
     mySeed = generateUserSeed(40);
@@ -99,6 +100,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function showToast(text, duration = 1800) {
+    if (isServerToastActive) return;
+
     const toast = elements.toastNotification;
     if (!toast) return;
 
@@ -118,17 +121,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const toast = elements.toastNotification;
     if (!toast) return;
 
+    isServerToastActive = true;
+
     toast.textContent = text;
     toast.setAttribute('role', 'status');
     toast.setAttribute('aria-live', 'polite');
 
-    toast.classList.add('server');
-	toast.classList.add('show');
+    toast.classList.add('show');
 
-    clearTimeout(showToast._t);
-    showToast._t = setTimeout(() => {
-      toast.classList.remove('server');
-	  toast.classList.remove('show');
+    clearTimeout(showToastserver._t);
+    showToastserver._t = setTimeout(() => {
+      toast.classList.remove('show');
+      isServerToastActive = false;
     }, duration);
   }
 
