@@ -90,7 +90,7 @@ npm start
 ```env
 REDIS_URL=<Redis の URL>
 ADMIN_PASS=<管理者パスワード>
-SECRET_KEY=<クライアントID生成用シークレットキー>
+SECRET_KEY=<クライアント ID 生成用シークレットキー>
 ```
 
 ---
