@@ -89,11 +89,8 @@ async function scanKeys(pattern) {
 }
 
 // -------------------- Toast通知 --------------------
-async function emitUserToast(io, clientId, message, type = 'info') {
-  const socketId = await redisClient.get(`socket:${clientId}`);
-  if (!socketId) return;
-
-  io.to(socketId).emit('toast', {
+function emitUserToast(io, clientId, message, type = 'info') {
+  io.to(`__user:${clientId}`).emit('toast', {
     scope: 'user',
     message,
     type,
@@ -369,48 +366,80 @@ app.post('/api/clear', requireSocketSession, async (req, res) => {
 // -------------------- Socket.IO --------------------
 io.on('connection', (socket) => {
   socket.on('authenticate', async ({ token, username }) => {
-    const now = Date.now();
-    const ip =
-      socket.handshake.headers['x-forwarded-for']?.split(',')[0] ||
-      socket.handshake.address;
+    if (socket.data.authenticated) {
+      socket.emit('alreadyAuthenticated');
+      return;
+    }
 
-    let clientId = token ? await validateAuthToken(token) : null;
-    let newToken = null;
-    socket.data = socket.data || {};
+    if (socket.data.authenticating) {
+      socket.emit('authInProgress');
+      return;
+    }
 
-    if (!clientId) {
-      const reissueKey = `ratelimit:reissue:${ip}`;
-      const last = await redisClient.get(reissueKey);
-      if (last && now - Number(last) < 30000) {
-        socket.emit('authRequired');
-        return;
+    socket.data.authenticating = true;
+
+    try {
+      const now = Date.now();
+      const ip =
+        socket.handshake.headers['x-forwarded-for']?.split(',')[0] ||
+        socket.handshake.address;
+
+      let clientId = token ? await validateAuthToken(token) : null;
+      let newToken = null;
+
+      if (!clientId) {
+        const reissueKey = `ratelimit:reissue:${ip}`;
+        const last = await redisClient.get(reissueKey);
+
+        if (last && now - Number(last) < 30000) {
+          socket.emit('authRequired');
+          return;
+        }
+
+        clientId = crypto.randomUUID();
+        newToken = createAuthToken();
+
+        await redisClient.set(`token:${newToken}`, clientId, 'EX', 86400);
+        await redisClient.set(reissueKey, now, 'PX', 30000);
+
+        socket.emit('assignToken', newToken);
       }
 
-      clientId = crypto.randomUUID();
-      newToken = createAuthToken();
-      await redisClient.set(`token:${newToken}`, clientId, 'EX', 86400);
-      await redisClient.set(reissueKey, now, 'PX', 30000);
-      socket.emit('assignToken', newToken);
+      socket.data.clientId = clientId;
+      socket.join(`__user:${clientId}`);
+      socket.data.authenticated = true;
+
+      if (
+        typeof username === 'string' &&
+        username.length > 0 &&
+        username.length <= 24
+      ) {
+        await redisClient.set(
+          `username:${clientId}`,
+          escapeHTML(username),
+          'EX',
+          SESSION_TTL_SEC
+        );
+      }
+
+      socket.emit('authenticated');
+    } catch (err) {
+      if (socket.data.clientId) {
+        socket.leave(`__user:${socket.data.clientId}`);
+      }
+      socket.data.clientId = null;
+      socket.data.authenticated = false;
+      throw err;
+    } finally {
+      socket.data.authenticating = false;
     }
-
-    await redisClient.set(
-      `socket:${clientId}`,
-      socket.id,
-      'EX',
-      SESSION_TTL_SEC
-    );
-
-    socket.data.clientId = clientId;
-
-    if (typeof username === 'string' && username.length > 0 && username.length <= 24) {
-      await redisClient.set(`username:${clientId}`, escapeHTML(username), 'EX', SESSION_TTL_SEC);
-    }
-
-    socket.emit('authenticated');
   });
 
   socket.on('joinRoom', async ({ roomId }) => {
-    if (!socket.data.clientId) return socket.disconnect(true);
+    if (!socket.data.authenticated || !socket.data.clientId) {
+      socket.emit('authRequired');
+      return;
+    }
     if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return;
 
     if (socket.data.roomId) socket.leave(socket.data.roomId);
@@ -427,10 +456,9 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', async () => {
-    if (socket.data?.clientId) {
-      await redisClient.del(`socket:${socket.data.clientId}`);
-    }
     const roomId = socket.data.roomId;
+    socket.data.authenticated = false;
+    socket.data.authenticating = false;
     if (roomId) {
       const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
       io.to(roomId).emit('roomUserCount', roomSize);
