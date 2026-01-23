@@ -22,11 +22,12 @@ redisClient.on('connect', () => console.log('Redis connected'));
 redisClient.on('error', (err) => console.error('Redis error', err));
 
 // -------------------- アプリ設定 --------------------
-const SESSION_TTL_SEC = 60 * 60 * 24; // 24時間
+const SESSION_TTL_SEC = 60 * 60 * 24; // Redis に保存するトークン/ユーザー名の有効期限（24時間）
 const BASE_MUTE_SEC = 30;
 const MAX_MUTE_SEC  = 60 * 10;        // 最大ミュート時間（10分）
 const MESSAGE_RATE_LIMIT_MS = 1000;
 const REPEAT_LIMIT = 3;
+const REISSUE_INTERVAL_MS = 10 * 60 * 1000; // ipごとclientId再発行制限（10分）
 
 // -------------------- ヘルパー関数 --------------------
 function escapeHTML(str = '') {
@@ -151,8 +152,7 @@ function createRequireSocketSession() {
 const app = express();
 app.use(express.json({ limit: '100kb' }));
 
-// trust proxy を boolean で設定
-app.set('trust proxy', true);
+app.set('trust proxy', true); // Render 用
 
 const httpServer = http.createServer(app);
 const io = new SocketIOServer(httpServer, { cors: { origin: '*' } });
@@ -390,8 +390,7 @@ io.on('connection', (socket) => {
     try {
       const now = Date.now();
       const ip =
-        socket.handshake.headers['x-forwarded-for']?.split(',')[0] ||
-        socket.handshake.address;
+        socket.handshake.headers['x-forwarded-for']?.split(',')[0] // Render 用
 
       let clientId = token ? await validateAuthToken(token) : null;
       let newToken = null;
@@ -400,7 +399,7 @@ io.on('connection', (socket) => {
         const reissueKey = `ratelimit:reissue:${ip}`;
         const last = await redisClient.get(reissueKey);
 
-        if (last && now - Number(last) < 30000) {
+        if (last && now - Number(last) < REISSUE_INTERVAL_MS) {
           socket.emit('authRequired');
           return;
         }
@@ -409,7 +408,7 @@ io.on('connection', (socket) => {
         newToken = createAuthToken();
 
         await redisClient.set(`token:${newToken}`, clientId, 'EX', 86400);
-        await redisClient.set(reissueKey, now, 'PX', 30000);
+        await redisClient.set(reissueKey, now, 'PX', REISSUE_INTERVAL_MS);
 
         socket.emit('assignToken', newToken);
       }
