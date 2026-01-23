@@ -248,7 +248,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      const payload = { roomId, username: myName, message: text, seed: mySeed, token: myToken };
+      const payload = { roomId, username: myName, message: text, seed: mySeed };
 
       if (!myToken) {
         pendingMessage = payload;
@@ -265,11 +265,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const res = await fetch(`${SERVER_URL}/api/messages`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${myToken}`
+        },
+        body: JSON.stringify({
+          roomId,
+          username: myName,
+          message: text,
+          seed: mySeed
+        })
       });
 
       if (!res.ok) {
+		showToast('送信できませんでした');
         return;
       }
 
@@ -339,8 +348,11 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       await fetch(`${SERVER_URL}/api/clear`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password, roomId, token: myToken })
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${myToken}`
+        },
+        body: JSON.stringify({ password, roomId })
       });
     } catch (e) {
       console.error(e);
@@ -397,14 +409,22 @@ document.addEventListener('DOMContentLoaded', () => {
     myToken = token;
     localStorage.setItem('chatToken', token);
     if (!pendingMessage) return;
-    const resend = { ...pendingMessage, token: myToken };
+    const resend = pendingMessage;
     pendingMessage = null;
     (async () => {
       try {
         await fetch(`${SERVER_URL}/api/messages`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(resend)
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${myToken}`
+          },
+          body: JSON.stringify({
+            roomId: resend.roomId,
+            username: resend.username,
+            message: resend.message,
+            seed: resend.seed
+          })
         });
       } catch (e) {
         console.error('再送信エラー', e);
@@ -419,7 +439,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   socket.on('authenticated', () => {
-    isSocketAuthenticated = true;
     joinRoom();
   });
 
