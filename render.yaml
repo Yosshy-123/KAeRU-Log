@@ -16,10 +16,6 @@ services:
         value: ""
       - key: SECRET_KEY
         value: ""
-      - key: TOKEN_KEY
-        value: ""
-      - key: NODE_ENV
-        value: "production"
 
   - type: keyvalue
     name: kaeru-log-redis
