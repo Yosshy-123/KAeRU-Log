@@ -91,10 +91,22 @@ async function scanKeys(pattern) {
 }
 
 // -------------------- Toast通知 --------------------
-function emitToast(io, target, message, type = 'info') {
-  if (!target) return;
+function emitUserToast(io, clientId, message, type = 'info') {
+  if (!clientId) return;
 
-  io.to(target).emit('toast', {
+  io.to(clientId).emit('toast', {
+    scope: 'user',
+    message,
+    type,
+    time: Date.now(),
+  });
+}
+
+function emitRoomToast(io, roomId, message, type = 'info') {
+  if (!roomId) return;
+
+  io.to(roomId).emit('toast', {
+    scope: 'room',
     message,
     type,
     time: Date.now(),
@@ -160,7 +172,7 @@ function createRequireSocketSession(io) {
     const clientId = await validateAuthToken(token);
     if (!clientId) {
       const possibleClientId = token?.split('.')?.[0];
-      emitToast(io, possibleClientId, '認証に失敗しました', 'error');
+      emitUserToast(io, possibleClientId, '認証に失敗しました', 'error');
       return res.sendStatus(403);
     }
 
@@ -274,7 +286,7 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
   const lastSent = await redisClient.get(rateKey);
   const now = Date.now();
   if (lastSent && now - Number(lastSent) < MESSAGE_RATE_LIMIT_MS) {
-      emitToast(io, clientId, '送信間隔が短すぎます', 'warning');
+      emitUserToast(io, clientId, '送信間隔が短すぎます', 'warning');
       return res.sendStatus(429);
   }
   await redisClient.set(rateKey, now, 'PX', MESSAGE_RATE_LIMIT_MS);
@@ -300,7 +312,7 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
         await redisClient.del(repeatIntervalKey);
 
         logUserAction(clientId, 'messageMutedBySpam', { roomId, username });
-        emitToast(
+        emitUserToast(
             io,
             clientId,
             `スパムを検知したため${MUTE_DURATION_SEC}秒間ミュートされました`,
@@ -359,7 +371,7 @@ app.post('/api/clear', requireSocketSession, async (req, res) => {
   if (password !== ADMIN_PASS) {
     logUserAction(clientId, 'InvalidAdminPassword', { roomId, username });
 
-    emitToast(io, clientId, '管理者パスワードが正しくありません', 'error');
+    emitUserToast(io, clientId, '管理者パスワードが正しくありません', 'error');
     return res.sendStatus(403);
   }
 
@@ -369,7 +381,7 @@ app.post('/api/clear', requireSocketSession, async (req, res) => {
 
   if (last && now - Number(last) < 30000) {
     logUserAction(clientId, 'clearMessagesRateLimited', { roomId, username });
-    emitToast(io, clientId, '削除操作は30秒以上間隔をあけてください', 'warning');
+    emitUserToast(io, clientId, '削除操作は30秒以上間隔をあけてください', 'warning');
     return res.sendStatus(429);
   }
 
@@ -380,7 +392,7 @@ app.post('/api/clear', requireSocketSession, async (req, res) => {
 
   await redisClient.del(`messages:${roomId}`);
   io.to(roomId).emit('clearMessages');
-  emitToast(io, clientId, '全メッセージを削除しました', 'info');
+  emitRoomToast(io, roomId, '全メッセージ削除されました', 'info');
   logUserAction(clientId, 'clearMessages', { roomId, username });
 });
 
