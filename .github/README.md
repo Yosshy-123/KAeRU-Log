@@ -1,7 +1,7 @@
 <div align="center">
   <img height="150px" src="logo.png" />
   <h1>KAeRU Log</h1>
-  <h3>Node.js Lightweight Chat App</h3>
+  <h3>Lightweight Node.js Chat App</h3>
   <a href="https://render.com/deploy?repo=https://github.com/Yosshy-123/KAeRU-Log.git"><img height="30px" src="https://render.com/images/deploy-to-render-button.svg" /></a>
 
   <table>
@@ -17,7 +17,7 @@
 
 ---
 
-## Directory Structure
+## Directory structure
 
 ```
 /
@@ -47,77 +47,77 @@
 
 ## Deployment
 
-### 1. Set up Redis
+### 1. Configure Redis
 
 KAeRU Log uses **Redis** for chat logs and state management.
 
-Set up Redis using one of the following methods.
+Prepare a Redis instance by one of the following methods.
 
-#### Use Render's Redis (Recommended)
+#### Use Render's Redis (recommended)
 
-1. In the Render dashboard, select **New** → **Key Value**.
-2. Set an arbitrary service name.
-3. Set the **Maxmemory Policy** to **noeviction**.
-4. Select a region and plan.
-5. After creation, note the Redis **Internal Key Value URL**.
+1. In the Render dashboard choose **New** → **Key Value**.
+2. Give the service a name of your choice.
+3. Set **Maxmemory Policy** to **noeviction**.
+4. Select region and plan.
+5. After creation, save the Redis **Internal Key Value URL**.
 
-#### Using an External Redis Service
+#### Use an external Redis service
 
-External services like the following are also available:
+You may also use an external provider such as:
 
 * [Upstash](https://console.upstash.com/redis)
 * [Redis Cloud](https://cloud.redis.io/#/databases)
 
-In either case, obtain the **Redis URL for connection**.
+In any case, obtain the **Redis connection URL**.
 
-### 2. Deploy the App
+### 2. Deploy the application
 
-1. In the Render dashboard, select **New** → **Web Service**.
+1. In the Render dashboard choose **New** → **Web Service**.
 2. Set the GitHub repository to `https://github.com/Yosshy-123/KAeRU-Log.git`.
-3. Set an arbitrary service name.
-4. Select the region and plan.
+3. Give the service a name.
+4. Select region and plan.
 5. Set **Environment** to Node (v22+).
-6. Set the **Build Command**.
+6. Set the **Build Command**:
 
 ```bash
 npm install
 ```
 
-7. Set the **Start Command**.
+7. Set the **Start Command**:
 
 ```bash
 npm start
 ```
 
-8. Set environment variables.
+8. Configure environment variables:
 
 ```env
-REDIS_URL=<Redis URL>
-ADMIN_PASS=<Administrator Password>
+REDIS_URL=<Redis connection URL>
+FRONTEND_URL=<Frontend origin URL>
+ADMIN_PASS=<Administrator password>
 ```
+
+> [!IMPORTANT]
+> For `FRONTEND_URL`, specify an origin without a trailing slash, e.g. `https://example.com`.
 
 ---
 
-## Live Demo
+## Live demo
 
 [https://kaeru-log.onrender.com/](https://kaeru-log.onrender.com/)
 
 ---
 
-## Bug Reports & Feedback
+## Bug reports & feedback
 
-Please report bugs or suggest improvements by **creating an issue** or contacting us at *Yosshy_123@proton.me*.
+For bug reports or suggestions for improvement, please **open an Issue** or contact *Yosshy_123@proton.me*.
 
-> [!warning]
-> If contacting us via email, replies may be delayed.
-> We appreciate it if you can use Issues whenever possible.
+> [!NOTE]
+> If you contact by email, replies may be delayed.
+> If possible, prefer creating an Issue as it is easier to track.
 
 ---
 
 ## License
 
 This project is provided under the **MIT License**.
-
----
-
-Translated with DeepL.com (free version)
