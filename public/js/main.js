@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let pendingMessage = null;
   let activeModal = null;
   let isServerToastActive = false;
+  let isSending = false;
 
   if (!mySeed) {
     mySeed = generateUserSeed(40);
@@ -243,14 +244,20 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch {}
   }
 
-  async function sendMessage() {
+  async function sendMessage(overridePayload = null) {
+    if (isSending) return;
+    isSending = true;
+
     const button = elements.sendMessageButton;
     const textarea = elements.messageTextarea;
-    if (!textarea || !button) return;
+    if (!textarea || !button) {
+      isSending = false;
+      return;
+    }
 
-    const text = textarea.value.trim();
+    const text = overridePayload?.message ?? textarea.value.trim();
     if (!text) {
-      showToast('メッセージを入力してください');
+      isSending = false;
       return;
     }
 
@@ -261,10 +268,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!myName) {
         showToast('ユーザー名を設定してください');
         openProfileModal();
+        isSending = false;
+        button.disabled = false;
+        button.textContent = '送信';
         return;
-      }
+	  }
 
-      const payload = { roomId, username: myName, message: text, seed: mySeed };
+      const payload = overridePayload ?? { roomId, username: myName, message: text, seed: mySeed };
 
       if (!myToken) {
         pendingMessage = payload;
@@ -285,27 +295,25 @@ document.addEventListener('DOMContentLoaded', () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${myToken}`
         },
-        body: JSON.stringify({
-          roomId,
-          username: myName,
-          message: text,
-          seed: mySeed
-        })
+        body: JSON.stringify(payload)
       });
 
       if (!res.ok) {
-		showToast('送信できませんでした');
+        showToast('送信できませんでした');
         return;
       }
 
-      textarea.value = '';
-      focusInput();
+      if (!overridePayload) {
+        textarea.value = '';
+        focusInput();
+      }
     } catch (e) {
       console.error(e);
       showToast('通信エラーが発生しました');
     } finally {
       button.disabled = false;
       button.textContent = '送信';
+      isSending = false;
     }
   }
 
@@ -424,28 +432,12 @@ document.addEventListener('DOMContentLoaded', () => {
   socket.on('assignToken', token => {
     myToken = token;
     localStorage.setItem('chatToken', token);
+
     if (!pendingMessage) return;
     const resend = pendingMessage;
     pendingMessage = null;
-    (async () => {
-      try {
-        await fetch(`${SERVER_URL}/api/messages`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${myToken}`
-          },
-          body: JSON.stringify({
-            roomId: resend.roomId,
-            username: resend.username,
-            message: resend.message,
-            seed: resend.seed
-          })
-        });
-      } catch (e) {
-        console.error('再送信エラー', e);
-      }
-    })();
+
+    sendMessage(resend);
   });
 
   socket.on('newMessage', msg => {
