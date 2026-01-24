@@ -1,27 +1,38 @@
 <div align="center">
   <img height="150px" src="logo.png" />
   <h1>KAeRU Log</h1>
-  <h3>Node.js 軽量チャットアプリ</h3>
+  <h3>Node.js Lightweight Chat App</h3>
   <a href="https://render.com/deploy?repo=https://github.com/Yosshy-123/KAeRU-Log.git"><img height="30px" src="https://render.com/images/deploy-to-render-button.svg" /></a>
+
+  <table>
+	  <thead>
+      	<tr>
+        		<th>English</th>
+        		<th><a href="README.ja.md">日本語</a></th>
+      	</tr>
+    	</thead>
+  </table>
+
 </div>
 
 ---
 
-## ディレクトリ構成
+## Directory Structure
 
 ```
 /
-├─ .github
+├─ .github/
 │  ├─ README.md
-│  └─ README.en.md
-├─ public
+│  ├─ README.ja.md
+│  └─ logo.png
+├─ public/
 │  ├─ index.html
-│  ├─ js
+│  ├─ js/
 │  │  ├─ main.js
 │  │  └─ socket.io.min.js
-│  ├─ css
+│  ├─ css/
 │  │  └─ style.css
-│  └─ images
+│  └─ images/
 │     ├─ logo.png
 │     ├─ favicon-16x16.png
 │     ├─ favicon-32x32.png
@@ -34,79 +45,79 @@
 
 ---
 
-## デプロイ
+## Deployment
 
-### 1. Redis を設定する
+### 1. Set up Redis
 
-KAeRU Log では、チャットログや状態管理のために **Redis** を使用します。
+KAeRU Log uses **Redis** for chat logs and state management.
 
-以下のいずれかの方法で Redis を用意してください。
+Set up Redis using one of the following methods.
 
-#### Render の Redis を使う（推奨）
+#### Use Render's Redis (Recommended)
 
-1. Render ダッシュボードで **New** → **Key Value** を選択します。
-2. 任意のサービス名を設定します。
-3. **Maxmemory Policy** を **noeviction** に設定します。
-4. リージョンとプランを選択します。
-5. 作成完了後、Redis の **Internal Key Value URL** を控えておきます。
+1. In the Render dashboard, select **New** → **Key Value**.
+2. Set an arbitrary service name.
+3. Set the **Maxmemory Policy** to **noeviction**.
+4. Select a region and plan.
+5. After creation, note the Redis **Internal Key Value URL**.
 
-#### 外部 Redis サービスを使う
+#### Using an External Redis Service
 
-以下のような外部サービスも利用可能です。
+External services like the following are also available:
 
 * [Upstash](https://console.upstash.com/redis)
 * [Redis Cloud](https://cloud.redis.io/#/databases)
 
-いずれの場合も、**接続用の Redis URL** を取得してください。
+In either case, obtain the **Redis URL for connection**.
 
 ---
 
-### 2. アプリ本体をデプロイ
+### 2. Deploy the App
 
-1. Render ダッシュボードで **New** → **Web Service** を選択します。
-2. GitHub リポジトリとして `https://github.com/Yosshy-123/KAeRU-Log.git` を設定します。
-3. 任意のサービス名を設定します。
-4. リージョンとプランを選択します。
-5. **Environment** を Node (v22+) に設定します。
-6. **Build Command** を設定します。
+1. In the Render dashboard, select **New** → **Web Service**.
+2. Set the GitHub repository to `https://github.com/Yosshy-123/KAeRU-Log.git`.
+3. Set an arbitrary service name.
+4. Select the region and plan.
+5. Set **Environment** to Node (v22+).
+6. Set the **Build Command**.
 
 ```bash
 npm install
 ```
 
-7. **Start Command** を設定します。
+7. Set the **Start Command**.
 
 ```bash
 npm start
 ```
 
-8. 環境変数を設定します。
+8. Set environment variables.
 
 ```env
-REDIS_URL=<Redis の URL>
-ADMIN_PASS=<管理者パスワード>
+REDIS_URL=<Redis URL>
+ADMIN_PASS=<Administrator Password>
 ```
 
 ---
 
-## ライブデモ
+## Live Demo
 
 [https://kaeru-log.onrender.com/](https://kaeru-log.onrender.com/)
 
 ---
 
-## 記事
+## Bug Reports & Feedback
 
-[KAeRU Log 紹介記事 (Qiita)](https://qiita.com/Yosshy_123/items/fa7289905f2fca60e450)
+Please report bugs or suggest improvements by **creating an issue** or contacting us at *Yosshy_123@proton.me*.
 
----
-
-## バグ報告・フィードバック
-
-不具合や改善リクエストは **Issue の作成** または *Yosshy_123@proton.me* までご連絡ください。
+> [!warning]
+> ※If contacting us via email, replies may be delayed.
+> We appreciate it if you can use Issues whenever possible.
 
 ---
 
-## ライセンス
+## License
 
-このプロジェクトは **MIT ライセンス** に基づいて提供されています。
+This project is provided under the **MIT License**.
+
+Translated with DeepL.com (free version)
