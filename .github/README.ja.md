@@ -93,8 +93,12 @@ npm start
 
 ```env
 REDIS_URL=<Redis の URL>
+FRONTEND_URL=<フロントエンドの URL>
 ADMIN_PASS=<管理者パスワード>
 ```
+
+> [!IMPORTANT]
+> FRONTEND_URL には `https://example.com` のように、末尾スラッシュなしのオリジンを指定してください。
 
 ---
 
@@ -108,7 +112,7 @@ ADMIN_PASS=<管理者パスワード>
 
 不具合の報告や改善のご提案は、 **Issue の作成** または *Yosshy_123@proton.me* までご連絡ください。
 
-> [!warning]
+> [!NOTE]
 > メールでのご連絡の場合、返信が遅れる可能性があります。
 > 可能な場合は Issue をご利用いただけると助かります。
 
