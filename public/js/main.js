@@ -9,8 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
-  const socket = io(SERVER_URL);
-
+  let socket = null; // 後で初期化
   /* ---------- 状態 ---------- */
   let messages = [];
   let myName = localStorage.getItem('chat_username') || '';
@@ -230,18 +229,70 @@ document.addEventListener('DOMContentLoaded', () => {
     return wrap;
   }
 
+  /* ---------- API ヘルパー ---------- */
+  async function obtainToken() {
+    if (!myName) {
+      openProfileModal();
+      throw new Error('username required');
+    }
+
+    const res = await fetch(`${SERVER_URL}/api/auth`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: myName })
+    });
+
+    if (!res.ok) {
+      throw new Error('failed to obtain token');
+    }
+
+    const data = await res.json();
+    if (data?.token) {
+      myToken = data.token;
+      localStorage.setItem('chatToken', myToken);
+      console.log('[Auth] token obtained');
+      return myToken;
+    }
+    throw new Error('invalid auth response');
+  }
+
+  async function fetchWithAuth(url, opts = {}, retry = true) {
+    if (!opts.headers) opts.headers = {};
+    if (myToken) {
+      opts.headers['Authorization'] = `Bearer ${myToken}`;
+    }
+
+    const res = await fetch(url, opts);
+    if ((res.status === 401 || res.status === 403) && retry) {
+      try {
+        myToken = null;
+        localStorage.removeItem('chatToken');
+        await obtainToken();
+        opts.headers['Authorization'] = `Bearer ${myToken}`;
+        return await fetchWithAuth(url, opts, false);
+      } catch (e) {
+        return res;
+      }
+    }
+    return res;
+  }
+
   /* ---------- API ---------- */
   async function loadHistory() {
     try {
-      const res = await fetch(`${SERVER_URL}/api/messages/${encodeURIComponent(roomId)}`, { cache: 'no-store' });
-      if (!res.ok) throw 0;
+      const res = await fetchWithAuth(`${SERVER_URL}/api/messages/${encodeURIComponent(roomId)}`, {
+        cache: 'no-store'
+      });
+      if (!res || !res.ok) throw 0;
       messages = await res.json();
       if (elements.messageList) {
         elements.messageList.innerHTML = '';
         messages.forEach(m => elements.messageList.appendChild(createMessage(m)));
       }
       if (isAutoScroll) scrollBottom(false);
-    } catch {}
+    } catch (e) {
+      console.warn('loadHistory failed', e);
+    }
   }
 
   async function sendMessage(overridePayload = null) {
@@ -272,33 +323,32 @@ document.addEventListener('DOMContentLoaded', () => {
         button.disabled = false;
         button.textContent = '送信';
         return;
-	  }
+      }
 
       const payload = overridePayload ?? { roomId, username: myName, message: text, seed: mySeed };
 
       if (!myToken) {
         pendingMessage = payload;
-
-        if (socket?.connected) {
-          socket.emit('authenticate', { token: '', username: myName });
-          showToast('認証情報を取得中です…');
-        } else {
-          showToast('サーバーに接続されていません');
+        try {
+          await obtainToken();
+        } catch (e) {
+          showToast('認証に失敗しました');
+          isSending = false;
+          button.disabled = false;
+          button.textContent = '送信';
+          return;
         }
-
-        return;
       }
 
-      const res = await fetch(`${SERVER_URL}/api/messages`, {
+      const res = await fetchWithAuth(`${SERVER_URL}/api/messages`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${myToken}`
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify(payload)
       });
 
-      if (!res.ok) {
+      if (!res || !res.ok) {
         showToast('送信できませんでした');
         return;
       }
@@ -311,6 +361,7 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error(e);
       showToast('通信エラーが発生しました');
     } finally {
+      if (pendingMessage && (!overridePayload)) pendingMessage = null;
       button.disabled = false;
       button.textContent = '送信';
       isSending = false;
@@ -354,12 +405,12 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   function closeProfileModal() { closeModal(elements.profileModal); }
   function openAdminModal() {
-		if (elements.adminPasswordInput) {
+    if (elements.adminPasswordInput) {
       elements.adminPasswordInput.value = '';
     }
-		openModal(elements.adminModal);
-		focusInput(elements.adminPasswordInput);
-	}
+    openModal(elements.adminModal);
+    focusInput(elements.adminPasswordInput);
+  }
   function closeAdminModal() { closeModal(elements.adminModal); }
 
   async function deleteAllMessages() {
@@ -370,12 +421,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      await fetch(`${SERVER_URL}/api/clear`, {
+      await fetchWithAuth(`${SERVER_URL}/api/clear`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${myToken}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password, roomId })
       });
     } catch (e) {
@@ -392,6 +440,27 @@ document.addEventListener('DOMContentLoaded', () => {
     closeProfileModal();
     showToast('プロフィールを保存しました');
     focusInput();
+
+    if (!myToken) {
+      obtainToken()
+        .then(() => {
+          if (pendingMessage) {
+            const pm = pendingMessage;
+            pendingMessage = null;
+            sendMessage(pm);
+          }
+          if (!socket || !socket.connected) {
+            startConnection().catch(err => console.warn('startConnection failed', err));
+          }
+        })
+        .catch(() => {
+          showToast('認証に失敗しました');
+        });
+    } else {
+      if (!socket || !socket.connected) {
+        startConnection().catch(err => console.warn('startConnection failed', err));
+      }
+    }
   }
 
   /* ---------- モーダル Enterキー対応 ---------- */
@@ -403,7 +472,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.key === 'Enter') {
         e.preventDefault();
         action();
-		if (typeof close === 'function') close();
+        if (typeof close === 'function') close();
       }
     });
   }
@@ -411,81 +480,96 @@ document.addEventListener('DOMContentLoaded', () => {
   addEnterKeyForModal(elements.profileModal, saveProfile);
   addEnterKeyForModal(elements.adminModal, deleteAllMessages, closeAdminModal);
 
-  /* ---------- Socket.IO ---------- */
+  /* ---------- Socket.IO: 接続管理 ---------- */
   function joinRoom() {
+    if (!socket) return;
     socket.emit('joinRoom', { roomId });
   }
 
-  socket.on('connect', () => {
-    setConnectionState('online');
-    socket.emit('authenticate', { token: myToken || '', username: myName || '' });
-  });
+  function createSocket() {
+    socket = io(SERVER_URL, {
+      auth: { token: myToken || '' }
+    });
 
-  socket.on('disconnect', () => {
-    setConnectionState('offline');
-  });
+    socket.on('connect', () => {
+      setConnectionState('online');
+      joinRoom();
+    });
 
-  socket.io.on('reconnect_attempt', () => {
-    setConnectionState('connecting');
-  });
+    socket.on('disconnect', () => {
+      setConnectionState('offline');
+    });
 
-  socket.on('assignToken', token => {
-    myToken = token;
-    localStorage.setItem('chatToken', token);
+    socket.io.on('reconnect_attempt', () => {
+      if (socket) socket.auth = { token: myToken || '' };
+      setConnectionState('connecting');
+    });
 
-    if (!pendingMessage) return;
-    const resend = pendingMessage;
-    pendingMessage = null;
+    socket.on('newMessage', msg => {
+      messages.push(msg);
+      elements.messageList?.appendChild(createMessage(msg));
+      if (isAutoScroll) scrollBottom(true);
+    });
 
-    sendMessage(resend);
-  });
+    socket.on('clearMessages', () => {
+      messages = [];
+      if (elements.messageList) elements.messageList.innerHTML = '';
+    });
 
-  socket.on('newMessage', msg => {
-    messages.push(msg);
-    elements.messageList?.appendChild(createMessage(msg));
-    if (isAutoScroll) scrollBottom(true);
-  });
+    socket.on('toast', data => {
+      if (!data || typeof data !== 'object') return;
 
-  socket.on('authenticated', () => {
-    joinRoom();
-  });
+      const { scope, message } = data;
+      if (!message) return;
 
-  socket.on('clearMessages', () => {
-    messages = [];
-    if (elements.messageList) elements.messageList.innerHTML = '';
-  });
-
-  socket.on('toast', data => {
-    if (!data || typeof data !== 'object') return;
-
-    const { scope, message } = data;
-    if (!message) return;
-
-    if (scope === 'user') {
       showToastserver(message);
-      return;
-    }
+    });
 
-    if (scope === 'room') {
-      showToastserver(message);
-      return;
-    }
-  });
+    socket.on('roomUserCount', count => {
+      if (typeof count === 'number' && elements.onlineUserCount) {
+        elements.onlineUserCount.textContent = `オンライン: ${count}`;
+      }
+    });
 
-  socket.on('roomUserCount', count => {
-    if (typeof count === 'number' && elements.onlineUserCount) {
-      elements.onlineUserCount.textContent = `オンライン: ${count}`;
-    }
-  });
+    socket.on('joinedRoom', () => {
+      loadHistory();
+      focusInput();
+    });
 
-  socket.on('joinedRoom', () => {
-    loadHistory();
-    focusInput();
-  });
+    socket.on('connect_error', (err) => {
+      console.warn('connect_error', err);
+      if (err && /Authentication|Invalid token|Authentication required/i.test(String(err.message || err))) {
+        myToken = null;
+        localStorage.removeItem('chatToken');
+        obtainToken()
+          .then(() => {
+            if (socket) {
+              socket.auth = { token: myToken || '' };
+              socket.connect();
+            } else {
+              createSocket();
+            }
+          })
+          .catch(() => {
+            openProfileModal();
+          });
+      }
+    });
+  }
+
+  async function startConnection() {
+    if (!myToken) {
+      await obtainToken();
+    }
+    if (!socket) createSocket();
+    else if (!socket.connected) {
+      socket.auth = { token: myToken || '' };
+      socket.connect();
+    }
+  }
 
   /* ---------- イベント登録 ---------- */
-  elements.sendMessageButton?.addEventListener('click', sendMessage);
-
+  elements.sendMessageButton?.addEventListener('click', () => sendMessage());
   if (elements.messageTextarea) {
     const isMobileLike = window.matchMedia('(max-width: 820px) and (pointer: coarse)').matches;
     elements.messageTextarea.addEventListener('keydown', e => {
@@ -521,8 +605,33 @@ document.addEventListener('DOMContentLoaded', () => {
     changeChatRoom(elements.roomIdInput.value.trim())
   );
 
-  // 自動スクロール
   elements.chatContainer?.addEventListener('scroll', () => {
     isAutoScroll = isScrolledToBottom();
   });
+
+  /* ---------- 初期処理 ---------- */
+  (async () => {
+    try {
+      if (myToken) {
+        startConnection().catch(() => {});
+      } else if (myName) {
+        try {
+          await obtainToken();
+          startConnection().catch(() => {});
+        } catch (e) {
+          openProfileModal();
+        }
+      } else {
+        openProfileModal();
+      }
+
+      if (pendingMessage && myToken) {
+        const pm = pendingMessage;
+        pendingMessage = null;
+        sendMessage(pm);
+      }
+    } catch (e) {
+      console.warn('initialization error', e);
+    }
+  })();
 });
