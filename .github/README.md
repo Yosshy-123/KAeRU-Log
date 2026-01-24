@@ -7,7 +7,7 @@
   <table>
   	<thead>
   		<tr>
-	  		<th><a>English</a></th>
+	  		<th>English</th>
 		  	<th><a href="README.ja.md">日本語</a></th>
 	  	</tr>
 	  </thead>
