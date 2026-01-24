@@ -5,12 +5,12 @@
   <a href="https://render.com/deploy?repo=https://github.com/Yosshy-123/KAeRU-Log.git"><img height="30px" src="https://render.com/images/deploy-to-render-button.svg" /></a>
 
   <table>
-	  <thead>
-      	<tr>
-        		<th>English</th>
-        		<th><a href="README.ja.md">日本語</a></th>
-      	</tr>
-    	</thead>
+  	<thead>
+  		<tr>
+	  		<th><a>English</a></th>
+		  	<th><a href="README.ja.md">日本語</a></th>
+	  	</tr>
+	  </thead>
   </table>
 
 </div>
