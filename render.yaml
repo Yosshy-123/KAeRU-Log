@@ -12,6 +12,8 @@ services:
     envVars:
       - key: REDIS_URL
         value: ""
+      - key: FRONTEND_URL
+        value: ""
       - key: ADMIN_PASS
         value: ""
 
