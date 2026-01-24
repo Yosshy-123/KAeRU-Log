@@ -111,7 +111,7 @@ ADMIN_PASS=<Administrator Password>
 Please report bugs or suggest improvements by **creating an issue** or contacting us at *Yosshy_123@proton.me*.
 
 > [!warning]
-> ※If contacting us via email, replies may be delayed.
+> If contacting us via email, replies may be delayed.
 > We appreciate it if you can use Issues whenever possible.
 
 ---
