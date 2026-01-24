@@ -10,9 +10,15 @@ const cron = require('node-cron');
 const PORT = process.env.PORT || 3000;
 const REDIS_URL = process.env.REDIS_URL;
 const ADMIN_PASS = process.env.ADMIN_PASS || 'adminkey1234';
+const FRONTEND_URL = process.env.FRONTEND_URL;
 
 if (!REDIS_URL) {
   console.error('REDIS_URL is not set');
+  process.exit(1);
+}
+
+if (!FRONTEND_URL) {
+  console.error('FRONTEND_URL is not set');
   process.exit(1);
 }
 
@@ -22,12 +28,10 @@ redisClient.on('connect', () => console.log('Redis connected'));
 redisClient.on('error', (err) => console.error('Redis error', err));
 
 // -------------------- アプリ設定 --------------------
-const SESSION_TTL_SEC = 60 * 60 * 24; // Redis に保存するトークン/ユーザー名の有効期限（24時間）
 const BASE_MUTE_SEC = 30;
 const MAX_MUTE_SEC  = 60 * 10;        // 最大ミュート時間（10分）
 const MESSAGE_RATE_LIMIT_MS = 1000;
 const REPEAT_LIMIT = 3;
-const REISSUE_INTERVAL_MS = 10 * 60 * 1000; // ipごとclientId再発行制限（10分）
 
 // -------------------- ヘルパー関数 --------------------
 function escapeHTML(str = '') {
@@ -152,10 +156,26 @@ function createRequireSocketSession() {
 const app = express();
 app.use(express.json({ limit: '100kb' }));
 
+const cors = require('cors');
+
+app.use(cors({
+  origin: FRONTEND_URL,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  credentials: true,
+}));
+
 app.set('trust proxy', true); // Render 用
 
 const httpServer = http.createServer(app);
-const io = new SocketIOServer(httpServer, { cors: { origin: '*' } });
+
+const io = new SocketIOServer(httpServer, { 
+  cors: { 
+    origin: FRONTEND_URL, 
+    methods: ['GET', 'POST', 'OPTIONS'],
+    credentials: true,
+  } 
+});
+
 const requireSocketSession = createRequireSocketSession();
 
 // -------------------- 月次Redisリセット --------------------
@@ -198,7 +218,7 @@ async function monthlyRedisReset(ioInstance) {
 }
 
 // -------------------- API --------------------
-app.get('/api/messages/:roomId', async (req, res) => {
+app.get('/api/messages/:roomId', requireSocketSession, async (req, res) => {
   try {
     const roomId = req.params.roomId;
     if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId))
@@ -336,6 +356,28 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
   }
 });
 
+// -------------------- トークン発行 API --------------------
+app.post('/api/auth', async (req, res) => {
+  try {
+    const { username } = req.body;
+    if (!username || typeof username !== 'string' || username.length > 24) {
+      return res.status(400).json({ error: 'Invalid username' });
+    }
+
+    const clientId = crypto.randomUUID();
+    const token = createAuthToken();
+
+    await redisClient.set(`token:${token}`, clientId, 'EX', 60 * 60 * 24);
+    await redisClient.set(`username:${clientId}`, escapeHTML(username), 'EX', 60 * 60 * 24);
+
+    res.json({ token, clientId });
+    console.log(`[Auth] Token issued for clientId ${clientId}`);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
 // -------------------- 管理API --------------------
 app.post('/api/clear', requireSocketSession, async (req, res) => {
   const { password, roomId } = req.body;
@@ -373,76 +415,26 @@ app.post('/api/clear', requireSocketSession, async (req, res) => {
 });
 
 // -------------------- Socket.IO --------------------
+io.use(async (socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token;
+    if (!token) return next(new Error('Authentication required'));
+
+    const clientId = await validateAuthToken(token);
+    if (!clientId) return next(new Error('Invalid token'));
+
+    socket.data.clientId = clientId;
+    socket.data.authenticated = true;
+
+    socket.join(`__user:${clientId}`);
+
+    next();
+  } catch (err) {
+    next(new Error('Authentication error'));
+  }
+});
+
 io.on('connection', (socket) => {
-  socket.on('authenticate', async ({ token, username }) => {
-    if (socket.data.authenticated) {
-      socket.emit('alreadyAuthenticated');
-      return;
-    }
-
-    if (socket.data.authenticating) {
-      socket.emit('authInProgress');
-      return;
-    }
-
-    socket.data.authenticating = true;
-
-    try {
-      const now = Date.now();
-      const ip =
-        socket.handshake.headers['x-forwarded-for']?.split(',')[0] // Render 用
-
-      let clientId = token ? await validateAuthToken(token) : null;
-      let newToken = null;
-
-      if (!clientId) {
-        const reissueKey = `ratelimit:reissue:${ip}`;
-        const last = await redisClient.get(reissueKey);
-
-        if (last && now - Number(last) < REISSUE_INTERVAL_MS) {
-          socket.emit('authRequired');
-          return;
-        }
-
-        clientId = crypto.randomUUID();
-        newToken = createAuthToken();
-
-        await redisClient.set(`token:${newToken}`, clientId, 'EX', 86400);
-        await redisClient.set(reissueKey, now, 'PX', REISSUE_INTERVAL_MS);
-
-        socket.emit('assignToken', newToken);
-      }
-
-      socket.data.clientId = clientId;
-      socket.join(`__user:${clientId}`);
-      socket.data.authenticated = true;
-
-      if (
-        typeof username === 'string' &&
-        username.length > 0 &&
-        username.length <= 24
-      ) {
-        await redisClient.set(
-          `username:${clientId}`,
-          escapeHTML(username),
-          'EX',
-          SESSION_TTL_SEC
-        );
-      }
-
-      socket.emit('authenticated');
-    } catch (err) {
-      if (socket.data.clientId) {
-        socket.leave(`__user:${socket.data.clientId}`);
-      }
-      socket.data.clientId = null;
-      socket.data.authenticated = false;
-      throw err;
-    } finally {
-      socket.data.authenticating = false;
-    }
-  });
-
   socket.on('joinRoom', async ({ roomId }) => {
     if (!socket.data.authenticated || !socket.data.clientId) {
       socket.emit('authRequired');
@@ -466,7 +458,6 @@ io.on('connection', (socket) => {
   socket.on('disconnect', async () => {
     const roomId = socket.data.roomId;
     socket.data.authenticated = false;
-    socket.data.authenticating = false;
     if (roomId) {
       const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
       io.to(roomId).emit('roomUserCount', roomSize);
