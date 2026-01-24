@@ -70,8 +70,6 @@ External services like the following are also available:
 
 In either case, obtain the **Redis URL for connection**.
 
----
-
 ### 2. Deploy the App
 
 1. In the Render dashboard, select **New** → **Web Service**.
