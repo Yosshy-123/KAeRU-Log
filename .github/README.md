@@ -120,4 +120,6 @@ Please report bugs or suggest improvements by **creating an issue** or contactin
 
 This project is provided under the **MIT License**.
 
+---
+
 Translated with DeepL.com (free version)
