@@ -275,6 +275,16 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
   const clientId = req.clientId;
   if (!clientId) return res.sendStatus(403);
 
+  const storedUsername = await redisClient.get(`username:${clientId}`);
+  if (storedUsername !== username) {
+    await redisClient.set(`username:${clientId}`, escapeHTML(username), 'EX', 60 * 60 * 24);
+
+    logUserAction(clientId, 'usernameChanged', {
+      oldUsername: storedUsername,
+      newUsername: username,
+    });
+  }
+
   const muteKey = `msg:mute:${clientId}`;
   if (await redisClient.exists(muteKey)) return res.sendStatus(429);
 
