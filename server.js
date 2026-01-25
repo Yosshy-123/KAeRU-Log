@@ -79,7 +79,6 @@ async function scanKeys(pattern) {
   const keys = [];
 
   do {
-    // ioredis.scan returns [nextCursor, keys]
     const [nextCursor, batch] = await redisClient.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
     cursor = nextCursor;
     keys.push(...batch);
@@ -169,6 +168,22 @@ app.use(
     credentials: true,
   })
 );
+
+// -------------------- セキュリティヘッダー --------------------
+app.use((req, res, next) => {
+  res.setHeader(
+    'Content-Security-Policy',
+    `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ${FRONTEND_URL}; frame-ancestors ${FRONTEND_URL};`
+  );
+
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+
+  res.setHeader(
+    'Permissions-Policy',
+    'geolocation=(), microphone=(), camera=(), fullscreen=(self)'
+  );
+  next();
+});
 
 app.set('trust proxy', true); // Render 用
 
