@@ -88,10 +88,20 @@ async function scanKeys(pattern) {
   return keys;
 }
 
+// -------------------- IPレート制限 --------------------
+async function checkIpRateLimit(key, limit, windowSec) {
+  const count = await redisClient.incr(key);
+
+  if (count === 1) {
+    await redisClient.expire(key, windowSec);
+  }
+
+  return count <= limit;
+}
 
 // -------------------- Origin 正規化チェック --------------------
 function isAllowedOrigin(origin, frontendUrl) {
-  if (!origin) return false;
+  if (!origin) return true;
 
   let originUrl;
   let frontendOrigin;
@@ -357,7 +367,7 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
     const roomKey = `messages:${roomId}`;
     const luaScript = `
       redis.call('RPUSH', KEYS[1], ARGV[1])
-      redis.call('LTRIM', KEYS[1], -1000, -1)
+      redis.call('LTRIM', KEYS[1], -100, -1)
       return 1
     `;
     await redisClient.eval(luaScript, 1, roomKey, JSON.stringify(storedMessage));
@@ -375,6 +385,16 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
 // -------------------- トークン発行 API --------------------
 app.post('/api/auth', async (req, res) => {
   try {
+    // ---- IP レート制限 ----
+    const ip = req.ip;
+
+    const rateKey = `ratelimit:auth:ip:${ip}`;
+    const allowed = await checkIpRateLimit(rateKey, 3, 60);
+
+    if (!allowed) {
+      return res.sendStatus(429);
+    }
+
     // ---- Origin チェック ----
     const origin = req.headers.origin;
     if (!isAllowedOrigin(origin, FRONTEND_URL)) return res.sendStatus(403);
@@ -400,10 +420,6 @@ app.post('/api/auth', async (req, res) => {
 
 // -------------------- 管理API --------------------
 app.post('/api/clear', requireSocketSession, async (req, res) => {
-  // ---- Origin チェック ----
-  const origin = req.headers.origin;
-  if (!isAllowedOrigin(origin, FRONTEND_URL)) return res.sendStatus(403);
-
   const { password, roomId } = req.body;
 
   const clientId = req.clientId;
