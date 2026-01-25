@@ -1,4 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
+  'use strict';
+
   /* ---------- 初期設定 ---------- */
   const SERVER_URL = window.location.origin.replace(/\/$/, '');
   const path = location.pathname.split('/').filter(Boolean);
@@ -10,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   let socket = null; // 後で初期化
+
   /* ---------- 状態 ---------- */
   let messages = [];
   let myName = localStorage.getItem('chat_username') || '';
@@ -62,9 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (elements.roomIdInput) {
     elements.roomIdInput.value = roomId || '';
 
-    elements.roomIdInput.addEventListener('focus', () => {
-      selectAll(elements.roomIdInput);
-    });
+    elements.roomIdInput.addEventListener('focus', () => selectAll(elements.roomIdInput));
 
     elements.roomIdInput.addEventListener('keydown', e => {
       if (e.key === 'Enter') {
@@ -88,27 +89,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function selectAll(input) {
     if (!input) return;
-    setTimeout(() => {
-      input.select();
-    }, 0);
+    setTimeout(() => input.select(), 0);
   }
 
   function showToast(text, duration = 1800) {
     if (isServerToastActive) return;
-
     const toast = elements.toastNotification;
     if (!toast) return;
 
     toast.textContent = text;
     toast.setAttribute('role', 'status');
     toast.setAttribute('aria-live', 'polite');
-
     toast.classList.add('show');
 
     clearTimeout(showToast._t);
-    showToast._t = setTimeout(() => {
-      toast.classList.remove('show');
-    }, duration);
+    showToast._t = setTimeout(() => toast.classList.remove('show'), duration);
   }
 
   function showToastserver(text, duration = 1800) {
@@ -116,11 +111,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!toast) return;
 
     isServerToastActive = true;
-
     toast.textContent = text;
     toast.setAttribute('role', 'status');
     toast.setAttribute('aria-live', 'polite');
-
     toast.classList.add('show');
 
     clearTimeout(showToastserver._t);
@@ -223,7 +216,6 @@ document.addEventListener('DOMContentLoaded', () => {
     text.innerHTML = msg.message || '';
 
     bubble.append(meta, text);
-
     wrap.append(avatar, bubble);
 
     return wrap;
@@ -258,9 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function fetchWithAuth(url, opts = {}, retry = true) {
     if (!opts.headers) opts.headers = {};
-    if (myToken) {
-      opts.headers['Authorization'] = `Bearer ${myToken}`;
-    }
+    if (myToken) opts.headers['Authorization'] = `Bearer ${myToken}`;
 
     const res = await fetch(url, opts);
     if ((res.status === 401 || res.status === 403) && retry) {
@@ -283,12 +273,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await fetchWithAuth(`${SERVER_URL}/api/messages/${encodeURIComponent(roomId)}`, {
         cache: 'no-store'
       });
+
       if (!res || !res.ok) throw 0;
       messages = await res.json();
+
       if (elements.messageList) {
         elements.messageList.innerHTML = '';
         messages.forEach(m => elements.messageList.appendChild(createMessage(m)));
       }
+
       if (isAutoScroll) scrollBottom(false);
     } catch (e) {
       console.warn('loadHistory failed', e);
@@ -342,9 +335,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const res = await fetchWithAuth(`${SERVER_URL}/api/messages`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
 
@@ -361,7 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error(e);
       showToast('通信エラーが発生しました');
     } finally {
-      if (pendingMessage && (!overridePayload)) pendingMessage = null;
+      if (pendingMessage && !overridePayload) pendingMessage = null;
       button.disabled = false;
       button.textContent = '送信';
       isSending = false;
@@ -371,16 +362,19 @@ document.addEventListener('DOMContentLoaded', () => {
   /* ---------- モーダル ---------- */
   function openModal(modal) {
     if (!modal) return;
-    if (activeModal && activeModal !== modal) {
-      closeModal(activeModal);
-    }
+    if (activeModal && activeModal !== modal) closeModal(activeModal);
+
     modal.classList.add('show');
     modal.setAttribute('aria-hidden', 'false');
     activeModal = modal;
+
     const input = modal.querySelector('input, textarea, button');
     input?.focus();
 
-    const escHandler = e => { if (e.key === 'Escape') closeModal(modal); };
+    const escHandler = e => {
+      if (e.key === 'Escape') closeModal(modal);
+    };
+
     modal._escHandler = escHandler;
     document.addEventListener('keydown', escHandler);
   }
@@ -390,28 +384,29 @@ document.addEventListener('DOMContentLoaded', () => {
     modal.classList.remove('show');
     modal.setAttribute('aria-hidden', 'true');
     document.removeEventListener('keydown', modal._escHandler);
-    if (activeModal === modal) {
-      activeModal = null;
-    }
+    if (activeModal === modal) activeModal = null;
     focusInput();
   }
 
   function openProfileModal() {
-    if (elements.profileNameInput) {
-      elements.profileNameInput.value = myName || '';
-    }
+    if (elements.profileNameInput) elements.profileNameInput.value = myName || '';
     openModal(elements.profileModal);
     selectAll(elements.profileNameInput);
   }
-  function closeProfileModal() { closeModal(elements.profileModal); }
+
+  function closeProfileModal() {
+    closeModal(elements.profileModal);
+  }
+
   function openAdminModal() {
-    if (elements.adminPasswordInput) {
-      elements.adminPasswordInput.value = '';
-    }
+    if (elements.adminPasswordInput) elements.adminPasswordInput.value = '';
     openModal(elements.adminModal);
     focusInput(elements.adminPasswordInput);
   }
-  function closeAdminModal() { closeModal(elements.adminModal); }
+
+  function closeAdminModal() {
+    closeModal(elements.adminModal);
+  }
 
   async function deleteAllMessages() {
     const password = elements.adminPasswordInput?.value || '';
@@ -433,7 +428,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function saveProfile() {
     const v = (elements.profileNameInput?.value || '').trim().slice(0, 24);
-    if (!v) { showToast('ユーザー名は1〜24文字で設定してください'); return; }
+    if (!v) {
+      showToast('ユーザー名は1〜24文字で設定してください');
+      return;
+    }
+
     myName = v;
     localStorage.setItem('chat_username', myName);
     if (elements.currentUsernameLabel) elements.currentUsernameLabel.textContent = myName;
@@ -449,17 +448,11 @@ document.addEventListener('DOMContentLoaded', () => {
             pendingMessage = null;
             sendMessage(pm);
           }
-          if (!socket || !socket.connected) {
-            startConnection().catch(err => console.warn('startConnection failed', err));
-          }
+          if (!socket || !socket.connected) startConnection().catch(err => console.warn('startConnection failed', err));
         })
-        .catch(() => {
-          showToast('認証に失敗しました');
-        });
+        .catch(() => showToast('認証に失敗しました'));
     } else {
-      if (!socket || !socket.connected) {
-        startConnection().catch(err => console.warn('startConnection failed', err));
-      }
+      if (!socket || !socket.connected) startConnection().catch(err => console.warn('startConnection failed', err));
     }
   }
 
@@ -487,18 +480,14 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function createSocket() {
-    socket = io(SERVER_URL, {
-      auth: { token: myToken || '' }
-    });
+    socket = io(SERVER_URL, { auth: { token: myToken || '' } });
 
     socket.on('connect', () => {
       setConnectionState('online');
       joinRoom();
     });
 
-    socket.on('disconnect', () => {
-      setConnectionState('offline');
-    });
+    socket.on('disconnect', () => setConnectionState('offline'));
 
     socket.io.on('reconnect_attempt', () => {
       if (socket) socket.auth = { token: myToken || '' };
@@ -518,10 +507,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     socket.on('toast', data => {
       if (!data || typeof data !== 'object') return;
-
       const { scope, message } = data;
       if (!message) return;
-
       showToastserver(message);
     });
 
@@ -536,9 +523,9 @@ document.addEventListener('DOMContentLoaded', () => {
       focusInput();
     });
 
-    socket.on('connect_error', (err) => {
+    socket.on('connect_error', err => {
       console.warn('connect_error', err);
-      if (err && /Authentication|Invalid token|Authentication required/i.test(String(err.message || err))) {
+      if (err && /Authentication|Invalid token|Authentication required/i.test(String(err.message || ''))) {
         myToken = null;
         localStorage.removeItem('chatToken');
         obtainToken()
@@ -550,17 +537,13 @@ document.addEventListener('DOMContentLoaded', () => {
               createSocket();
             }
           })
-          .catch(() => {
-            openProfileModal();
-          });
+          .catch(() => openProfileModal());
       }
     });
   }
 
   async function startConnection() {
-    if (!myToken) {
-      await obtainToken();
-    }
+    if (!myToken) await obtainToken();
     if (!socket) createSocket();
     else if (!socket.connected) {
       socket.auth = { token: myToken || '' };
@@ -570,6 +553,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /* ---------- イベント登録 ---------- */
   elements.sendMessageButton?.addEventListener('click', () => sendMessage());
+
   if (elements.messageTextarea) {
     const isMobileLike = window.matchMedia('(max-width: 820px) and (pointer: coarse)').matches;
     elements.messageTextarea.addEventListener('keydown', e => {
@@ -601,9 +585,7 @@ document.addEventListener('DOMContentLoaded', () => {
     location.href = `/room/${encodeURIComponent(newRoom)}`;
   }
 
-  elements.joinRoomButton?.addEventListener('click', () =>
-    changeChatRoom(elements.roomIdInput.value.trim())
-  );
+  elements.joinRoomButton?.addEventListener('click', () => changeChatRoom(elements.roomIdInput.value.trim()));
 
   elements.chatContainer?.addEventListener('scroll', () => {
     isAutoScroll = isScrolledToBottom();
