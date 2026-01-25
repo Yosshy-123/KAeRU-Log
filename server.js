@@ -88,6 +88,36 @@ async function scanKeys(pattern) {
   return keys;
 }
 
+
+// -------------------- Origin 正規化チェック --------------------
+function isAllowedOrigin(origin, frontendUrl) {
+  if (!origin) return false;
+
+  let originUrl;
+  let frontendOrigin;
+
+  try {
+    originUrl = new URL(origin);
+    frontendOrigin = new URL(frontendUrl);
+  } catch {
+    return false;
+  }
+
+  const originPort =
+    originUrl.port ||
+    (originUrl.protocol === 'https:' ? '443' : '80');
+
+  const frontendPort =
+    frontendOrigin.port ||
+    (frontendOrigin.protocol === 'https:' ? '443' : '80');
+
+  return (
+    originUrl.protocol === frontendOrigin.protocol &&
+    originUrl.hostname === frontendOrigin.hostname &&
+    originPort === frontendPort
+  );
+}
+
 // -------------------- Toast通知 --------------------
 function emitUserToast(io, clientId, message, type = 'info') {
   io.to(`__user:${clientId}`).emit('toast', {
@@ -345,6 +375,10 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
 // -------------------- トークン発行 API --------------------
 app.post('/api/auth', async (req, res) => {
   try {
+    // ---- Origin チェック ----
+    const origin = req.headers.origin;
+    if (!isAllowedOrigin(origin, FRONTEND_URL)) return res.sendStatus(403);
+
     const { username } = req.body;
     if (!username || typeof username !== 'string' || username.length > 24) {
       return res.status(400).json({ error: 'Invalid username' });
@@ -366,6 +400,10 @@ app.post('/api/auth', async (req, res) => {
 
 // -------------------- 管理API --------------------
 app.post('/api/clear', requireSocketSession, async (req, res) => {
+  // ---- Origin チェック ----
+  const origin = req.headers.origin;
+  if (!isAllowedOrigin(origin, FRONTEND_URL)) return res.sendStatus(403);
+
   const { password, roomId } = req.body;
 
   const clientId = req.clientId;
@@ -402,6 +440,11 @@ app.post('/api/clear', requireSocketSession, async (req, res) => {
 // -------------------- Socket.IO --------------------
 io.use(async (socket, next) => {
   try {
+    // ---- Origin チェック ----
+    const origin = socket.handshake.headers.origin;
+    if (!isAllowedOrigin(origin, FRONTEND_URL)) return next(new Error('Forbidden origin'));
+
+    // ---- Token チェック ----
     const token = socket.handshake.auth?.token;
     if (!token) return next(new Error('Authentication required'));
 
