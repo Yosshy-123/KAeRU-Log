@@ -232,26 +232,6 @@ footer.message-composer {
 	background: linear-gradient(180deg, #151936, #10132b);
 }
 
-.user-info-box {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	border-right: 1px solid var(--border);
-	padding-right: 8px;
-	min-width: 120px;
-}
-
-.user-name-tag {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	border: 1px dashed #2a315a;
-	border-radius: 10px;
-	padding: 6px 8px;
-	color: #c3caff;
-	background: #121631;
-}
-
 textarea {
 	flex: 1;
 	resize: none;
@@ -454,14 +434,6 @@ textarea {
 
 	.message-input-wrapper {
 		padding: 6px;
-	}
-
-	.user-info-box {
-		border-right: none;
-		border-bottom: 1px solid var(--border);
-		padding-right: 0;
-		padding-bottom: 6px;
-		min-width: unset;
 	}
 
 	textarea {
