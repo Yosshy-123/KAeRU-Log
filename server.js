@@ -5,6 +5,7 @@ const { Server: SocketIOServer } = require('socket.io');
 const crypto = require('crypto');
 const Redis = require('ioredis');
 const cron = require('node-cron');
+const cors = require('cors');
 
 // -------------------- 環境変数 --------------------
 const PORT = process.env.PORT || 3000;
@@ -29,7 +30,7 @@ redisClient.on('error', (err) => console.error('Redis error', err));
 
 // -------------------- アプリ設定 --------------------
 const BASE_MUTE_SEC = 30;
-const MAX_MUTE_SEC  = 60 * 10;        // 最大ミュート時間（10分）
+const MAX_MUTE_SEC = 60 * 10; // 最大ミュート時間（10分）
 const MESSAGE_RATE_LIMIT_MS = 1000;
 const REPEAT_LIMIT = 3;
 
@@ -78,12 +79,8 @@ async function scanKeys(pattern) {
   const keys = [];
 
   do {
-    const [nextCursor, batch] = await redisClient.scan(
-      cursor,
-      'MATCH', pattern,
-      'COUNT', 100
-    );
-
+    // ioredis.scan returns [nextCursor, keys]
+    const [nextCursor, batch] = await redisClient.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
     cursor = nextCursor;
     keys.push(...batch);
   } while (cursor !== '0');
@@ -103,7 +100,6 @@ function emitUserToast(io, clientId, message, type = 'info') {
 
 function emitRoomToast(io, roomId, message, type = 'info') {
   if (!roomId) return;
-
   io.to(roomId).emit('toast', {
     scope: 'room',
     message,
@@ -128,7 +124,6 @@ function createAuthToken() {
 
 async function validateAuthToken(token) {
   if (!token) return null;
-
   const clientId = await redisClient.get(`token:${token}`);
   return clientId || null;
 }
@@ -156,24 +151,24 @@ function createRequireSocketSession() {
 const app = express();
 app.use(express.json({ limit: '100kb' }));
 
-const cors = require('cors');
-
-app.use(cors({
-  origin: FRONTEND_URL,
-  methods: ['GET', 'POST', 'OPTIONS'],
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin: FRONTEND_URL,
+    methods: ['GET', 'POST', 'OPTIONS'],
+    credentials: true,
+  })
+);
 
 app.set('trust proxy', true); // Render 用
 
 const httpServer = http.createServer(app);
 
-const io = new SocketIOServer(httpServer, { 
-  cors: { 
-    origin: FRONTEND_URL, 
+const io = new SocketIOServer(httpServer, {
+  cors: {
+    origin: FRONTEND_URL,
     methods: ['GET', 'POST', 'OPTIONS'],
     credentials: true,
-  } 
+  },
 });
 
 const requireSocketSession = createRequireSocketSession();
@@ -221,8 +216,7 @@ async function monthlyRedisReset(ioInstance) {
 app.get('/api/messages/:roomId', requireSocketSession, async (req, res) => {
   try {
     const roomId = req.params.roomId;
-    if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId))
-      return res.sendStatus(400);
+    if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return res.sendStatus(400);
 
     const rawMessages = await redisClient.lrange(`messages:${roomId}`, 0, -1);
     const messages = rawMessages.map((m) => {
@@ -245,31 +239,23 @@ app.get('/api/messages/:roomId', requireSocketSession, async (req, res) => {
 app.post('/api/messages', requireSocketSession, async (req, res) => {
   const { username, message, seed, roomId } = req.body;
 
-  if (!roomId || !username || !message || !seed)
-    return res.sendStatus(400);
-
-  if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId))
-    return res.sendStatus(400);
-
-  if (username.length === 0 || username.length > 24)
-    return res.sendStatus(400);
-
-  if (message.length === 0 || message.length > 800)
-    return res.sendStatus(400);
+  if (!roomId || !username || !message || !seed) return res.sendStatus(400);
+  if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return res.sendStatus(400);
+  if (username.length === 0 || username.length > 24) return res.sendStatus(400);
+  if (message.length === 0 || message.length > 800) return res.sendStatus(400);
 
   const clientId = req.clientId;
   if (!clientId) return res.sendStatus(403);
 
   const muteKey = `msg:mute:${clientId}`;
-  if (await redisClient.exists(muteKey))
-    return res.sendStatus(429);
+  if (await redisClient.exists(muteKey)) return res.sendStatus(429);
 
   const rateKey = `ratelimit:msg:${clientId}`;
   const lastSent = await redisClient.get(rateKey);
   const now = Date.now();
   if (lastSent && now - Number(lastSent) < MESSAGE_RATE_LIMIT_MS) {
-      emitUserToast(io, clientId, '送信間隔が短すぎます', 'warning');
-      return res.sendStatus(429);
+    emitUserToast(io, clientId, '送信間隔が短すぎます', 'warning');
+    return res.sendStatus(429);
   }
   await redisClient.set(rateKey, now, 'PX', MESSAGE_RATE_LIMIT_MS);
 
@@ -301,7 +287,7 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
         muteLevel = 0;
       }
 
-      const muteSeconds = Math.min(BASE_MUTE_SEC * (2 ** muteLevel), MAX_MUTE_SEC);
+      const muteSeconds = Math.min(BASE_MUTE_SEC * 2 ** muteLevel, MAX_MUTE_SEC);
 
       await redisClient.set(`msg:mute:${clientId}`, '1', 'EX', muteSeconds);
       await redisClient.set(muteLevelKey, muteLevel, 'EX', muteSeconds);
@@ -405,8 +391,7 @@ app.post('/api/clear', requireSocketSession, async (req, res) => {
 
   await redisClient.set(rateKey, now, 'PX', 60000);
 
-  if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId))
-    return res.sendStatus(400);
+  if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return res.sendStatus(400);
 
   await redisClient.del(`messages:${roomId}`);
   io.to(roomId).emit('clearMessages');
