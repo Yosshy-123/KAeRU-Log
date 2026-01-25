@@ -35,7 +35,6 @@ document.addEventListener('DOMContentLoaded', () => {
     messageList: document.getElementById('messageList'),
     messageTextarea: document.getElementById('messageTextarea'),
     sendMessageButton: document.getElementById('sendMessageButton'),
-    currentUsernameLabel: document.getElementById('currentUsernameLabel'),
     toastNotification: document.getElementById('toastNotification'),
 
     profileModal: document.getElementById('profileModal'),
@@ -57,10 +56,6 @@ document.addEventListener('DOMContentLoaded', () => {
     roomIdInput: document.getElementById('roomIdInput'),
     joinRoomButton: document.getElementById('joinRoomButton')
   };
-
-  if (elements.currentUsernameLabel) {
-    elements.currentUsernameLabel.textContent = myName || '未設定';
-  }
 
   if (elements.roomIdInput) {
     elements.roomIdInput.value = roomId || '';
@@ -435,7 +430,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     myName = v;
     localStorage.setItem('chat_username', myName);
-    if (elements.currentUsernameLabel) elements.currentUsernameLabel.textContent = myName;
     closeProfileModal();
     showToast('プロフィールを保存しました');
     focusInput();
