@@ -144,11 +144,13 @@ function createRequireSocketSession() {
     const token = req.headers['authorization']?.replace(/^Bearer\s+/i, '');
 
     if (typeof token !== 'string') {
+      logUserAction('unknown', 'invalidRestToken', { token });
       return res.sendStatus(401);
     }
 
     const clientId = await validateAuthToken(token);
     if (!clientId) {
+      logUserAction('unknown', 'invalidRestToken', { token });
       return res.sendStatus(403);
     }
 
@@ -396,6 +398,7 @@ app.post('/api/auth', async (req, res) => {
     await redisClient.set(`username:${clientId}`, escapeHTML(username), 'EX', 60 * 60 * 24);
 
     res.json({ token, clientId });
+    logUserAction(clientId, 'issueToken', { username });
     console.log(`[Auth] Token issued for clientId ${clientId}`);
   } catch (err) {
     console.error(err);
@@ -443,10 +446,16 @@ io.use(async (socket, next) => {
   try {
     // ---- Token チェック ----
     const token = socket.handshake.auth?.token;
-    if (!token) return next(new Error('Authentication required'));
+    if (!token) {
+      logUserAction('unknown', 'invalidSocketToken');
+      return next(new Error('Authentication required'));
+    }
 
     const clientId = await validateAuthToken(token);
-    if (!clientId) return next(new Error('Invalid token'));
+    if (!clientId) {
+      logUserAction('unknown', 'invalidSocketToken', { token });
+      return next(new Error('Invalid token'));
+    }
 
     socket.data.clientId = clientId;
     socket.data.authenticated = true;
@@ -465,7 +474,10 @@ io.on('connection', (socket) => {
       socket.emit('authRequired');
       return;
     }
-    if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return;
+    if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) {
+      logUserAction(socket.data.clientId, 'joinRoomFailed', { roomId });
+      return;
+    }
 
     if (socket.data.roomId) socket.leave(socket.data.roomId);
 
