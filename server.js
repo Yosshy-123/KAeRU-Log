@@ -276,6 +276,7 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
   const muteKey = `msg:mute:${clientId}`;
   if (await redisClient.exists(muteKey)) return res.sendStatus(429);
 
+  // --- 送信間隔レートリミット ---
   const rateKey = `ratelimit:msg:${clientId}`;
   const lastSent = await redisClient.get(rateKey);
   const now = Date.now();
@@ -285,63 +286,61 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
   }
   await redisClient.set(rateKey, now, 'PX', MESSAGE_RATE_LIMIT_MS);
 
-  // --- スパム・ミュート判定 ---
+  // --- スパム判定・ミュート処理 ---
   const lastTimeKey = `msg:last_time:${clientId}`;
-  const repeatIntervalKey = `msg:repeat_interval_count:${clientId}`;
+  const repeatCountKey = `msg:repeat_interval_count:${clientId}`;
   const lastIntervalKey = `msg:last_interval:${clientId}`;
 
   const lastTime = Number(await redisClient.get(lastTimeKey)) || 0;
-  let intervalCount = Number(await redisClient.get(repeatIntervalKey)) || 0;
   const lastInterval = Number(await redisClient.get(lastIntervalKey)) || 0;
+  let intervalCount = Number(await redisClient.get(repeatCountKey)) || 0;
 
   const interval = now - lastTime;
 
   if (lastTime && Math.abs(interval - lastInterval) < 300) {
+    // 短時間で同じ間隔のメッセージ -> スパム判定
     intervalCount++;
-    await redisClient.set(repeatIntervalKey, intervalCount, 'EX', BASE_MUTE_SEC);
-    await redisClient.set(lastIntervalKey, interval, 'EX', BASE_MUTE_SEC);
-
-    if (intervalCount >= REPEAT_LIMIT) {
-      const muteLevelKey = `msg:mute_level:${clientId}`;
-      const lastMuteKey = `msg:last_mute:${clientId}`;
-      const lastMuteTime = Number(await redisClient.get(lastMuteKey)) || 0;
-
-      let muteLevel = Number(await redisClient.get(muteLevelKey)) || 0;
-      if (now - lastMuteTime <= 10 * 60 * 1000) {
-        muteLevel += 1;
-      } else {
-        muteLevel = 0;
-      }
-
-      const muteSeconds = Math.min(BASE_MUTE_SEC * 2 ** muteLevel, MAX_MUTE_SEC);
-
-      await redisClient.set(`msg:mute:${clientId}`, '1', 'EX', muteSeconds);
-      await redisClient.set(muteLevelKey, muteLevel, 'EX', muteSeconds);
-      await redisClient.set(lastMuteKey, now, 'EX', muteSeconds);
-      await redisClient.del(repeatIntervalKey);
-
-      logUserAction(clientId, 'messageMutedBySpam', {
-        muteSeconds,
-        muteLevel,
-      });
-
-      emitUserToast(
-        io,
-        clientId,
-        `スパムを検知したため${muteSeconds}秒間ミュートされました`,
-        'warning'
-      );
-
-      return res.sendStatus(429);
-    }
   } else {
+    // 間隔が違う場合はリセット
     intervalCount = 1;
-    await redisClient.set(repeatIntervalKey, intervalCount, 'EX', BASE_MUTE_SEC);
-    await redisClient.set(lastIntervalKey, interval, 'EX', BASE_MUTE_SEC);
   }
 
+  // 値を保存
+  await redisClient.set(repeatCountKey, intervalCount, 'EX', BASE_MUTE_SEC);
+  await redisClient.set(lastIntervalKey, interval, 'EX', BASE_MUTE_SEC);
   await redisClient.set(lastTimeKey, now, 'EX', BASE_MUTE_SEC);
 
+  if (intervalCount >= REPEAT_LIMIT) {
+    // --- ミュート処理 ---
+    const muteLevelKey = `msg:mute_level:${clientId}`;
+    const lastMuteKey = `msg:last_mute:${clientId}`;
+
+    const ttl = await redisClient.ttl(muteKey) || 0;
+    let muteLevel = Number(await redisClient.get(muteLevelKey)) || 0;
+    const lastMuteTime = Number(await redisClient.get(lastMuteKey)) || 0;
+
+    if (ttl === -2 || now - lastMuteTime > 10 * 60 * 1000) {
+      muteLevel = 0; // 10分以上経過でレベルリセット
+    }
+
+    muteLevel++;
+    const muteSeconds = Math.min(BASE_MUTE_SEC * 2 ** muteLevel, MAX_MUTE_SEC);
+
+    if (muteSeconds > ttl) {
+      await redisClient.set(muteKey, '1', 'EX', muteSeconds);
+      await redisClient.set(muteLevelKey, muteLevel);
+      await redisClient.set(lastMuteKey, now);
+    }
+
+    logUserAction(clientId, 'messageMutedBySpam', { muteSeconds, muteLevel });
+    emitUserToast(io, clientId, `スパムを検知したため${muteSeconds}秒間ミュートされました`, 'warning');
+
+    // スパムカウントリセット
+    await redisClient.del(repeatCountKey);
+    return res.sendStatus(429);
+  }
+
+  // --- メッセージ保存 ---
   const storedMessage = {
     username: escapeHTML(username),
     message: escapeHTML(message),
@@ -359,7 +358,11 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
     await redisClient.eval(luaScript, 1, roomKey, JSON.stringify(storedMessage));
 
     io.to(roomId).emit('newMessage', storedMessage);
-    logUserAction(clientId, 'sendMessage', { roomId, username: storedMessage.username, message: storedMessage.message });
+    logUserAction(clientId, 'sendMessage', {
+      roomId,
+      username: storedMessage.username,
+      message: storedMessage.message,
+    });
 
     res.json({ ok: true });
   } catch (err) {
