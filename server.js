@@ -307,7 +307,7 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
       const lastMuteTime = Number(await redisClient.get(lastMuteKey)) || 0;
 
       let muteLevel = Number(await redisClient.get(muteLevelKey)) || 0;
-      if (now - lastMuteTime <= 30000) {
+      if (now - lastMuteTime <= 10 * 60 * 1000) {
         muteLevel += 1;
       } else {
         muteLevel = 0;
