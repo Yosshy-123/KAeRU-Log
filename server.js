@@ -390,7 +390,7 @@ app.post('/api/auth', async (req, res) => {
     const ip = req.ip;
 
     const rateKey = `ratelimit:auth:ip:${ip}`;
-    const allowed = await checkIpRateLimit(rateKey, 3, 60);
+    const allowed = await checkIpRateLimit(rateKey, 5, 60 * 60); // 5回 / 1時間
 
     if (!allowed) {
       return res.sendStatus(429);
