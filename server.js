@@ -44,47 +44,47 @@ function escapeHTML(str = '') {
     .replace(/'/g, '&#039;');
 }
 
-function formatJSTTime(date) {
-  const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+function toJST(date) {
+  return new Date(date.getTime() + 9 * 60 * 60 * 1000);
+}
+
+function pad(n) {
+  return String(n).padStart(2, '0');
+}
+
+function formatJST(date = new Date(), { withSeconds = false } = {}) {
+  const jst = toJST(date);
   const yyyy = jst.getUTCFullYear();
-  const mm = String(jst.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(jst.getUTCDate()).padStart(2, '0');
-  const hh = String(jst.getUTCHours()).padStart(2, '0');
-  const min = String(jst.getUTCMinutes()).padStart(2, '0');
+  const mm = pad(jst.getUTCMonth() + 1);
+  const dd = pad(jst.getUTCDate());
+  const hh = pad(jst.getUTCHours());
+  const min = pad(jst.getUTCMinutes());
+  if (withSeconds) {
+    const ss = pad(jst.getUTCSeconds());
+    return `${yyyy}/${mm}/${dd} ${hh}:${min}:${ss}`;
+  }
   return `${yyyy}/${mm}/${dd} ${hh}:${min}`;
 }
 
-function formatJSTTimeLog(date) {
-  const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
-  const yyyy = jst.getUTCFullYear();
-  const mm = String(jst.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(jst.getUTCDate()).padStart(2, '0');
-  const hh = String(jst.getUTCHours()).padStart(2, '0');
-  const min = String(jst.getUTCMinutes()).padStart(2, '0');
-  const ss = String(jst.getUTCSeconds()).padStart(2, '0');
-  return `${yyyy}/${mm}/${dd} ${hh}:${min}:${ss}`;
-}
-
-function logUserAction(clientId, action, extra = {}) {
-  const time = formatJSTTimeLog(new Date());
-  const username = extra.username ? ` [Username:${extra.username}]` : '';
-  const info = { ...extra };
-  delete info.username;
-  const extraStr = Object.keys(info).length ? ` ${JSON.stringify(info)}` : '';
-  console.log(`[${time}] [User:${clientId}]${username} Action: ${action}${extraStr}`);
+function logAction({ user, action, extra = {} } = {}) {
+  const time = formatJST(new Date(), { withSeconds: true });
+  const userPart = user ? ` [User:${user}]` : '';
+  const extraStr = Object.keys(extra).length ? ` ${JSON.stringify(extra)}` : '';
+  console.log(`[${time}]${userPart} Action: ${action}${extraStr}`);
 }
 
 async function scanKeys(pattern) {
-  let cursor = '0';
-  const keys = [];
-
-  do {
-    const [nextCursor, batch] = await redisClient.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
-    cursor = nextCursor;
-    keys.push(...batch);
-  } while (cursor !== '0');
-
-  return keys;
+  return new Promise((resolve, reject) => {
+    const stream = redisClient.scanStream({ match: pattern, count: 100 });
+    const keys = [];
+    stream.on('data', (resultKeys) => {
+      if (resultKeys && resultKeys.length) {
+        keys.push(...resultKeys);
+      }
+    });
+    stream.on('end', () => resolve(keys));
+    stream.on('error', (err) => reject(err));
+  });
 }
 
 // -------------------- IPレート制限 --------------------
@@ -122,7 +122,7 @@ function createSystemMessage(htmlMessage) {
   return {
     username: 'システム',
     message: htmlMessage,
-    time: formatJSTTime(new Date()),
+    time: formatJST(new Date()),
     clientId: 'system',
     seed: 'system',
   };
@@ -134,8 +134,7 @@ function createAuthToken() {
 
 async function validateAuthToken(token) {
   if (!token) return null;
-  const clientId = await redisClient.get(`token:${token}`);
-  return clientId || null;
+  return (await redisClient.get(`token:${token}`)) || null;
 }
 
 // -------------------- Session管理 --------------------
@@ -144,13 +143,13 @@ function createRequireSocketSession() {
     const token = req.headers['authorization']?.replace(/^Bearer\s+/i, '');
 
     if (typeof token !== 'string') {
-      logUserAction('unknown', 'invalidRestToken', { token });
+      logAction({ action: 'invalidRestToken' });
       return res.sendStatus(401);
     }
 
     const clientId = await validateAuthToken(token);
     if (!clientId) {
-      logUserAction('unknown', 'invalidRestToken', { token });
+      logAction({ action: 'invalidRestToken', extra: { token } });
       return res.sendStatus(403);
     }
 
@@ -179,11 +178,7 @@ app.use((req, res, next) => {
   );
 
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-
-  res.setHeader(
-    'Permissions-Policy',
-    'geolocation=(), microphone=(), camera=(), fullscreen=(self)'
-  );
+  res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), fullscreen=(self)');
   next();
 });
 
@@ -204,8 +199,8 @@ const requireSocketSession = createRequireSocketSession();
 // -------------------- 月次Redisリセット --------------------
 async function monthlyRedisReset(ioInstance) {
   const now = new Date();
-  const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  const currentMonth = `${jstNow.getFullYear()}-${String(jstNow.getMonth() + 1).padStart(2, '0')}`;
+  const jstNow = toJST(now);
+  const currentMonth = `${jstNow.getUTCFullYear()}-${pad(jstNow.getUTCMonth() + 1)}`;
 
   try {
     const savedMonth = await redisClient.get('system:current_month');
@@ -217,10 +212,14 @@ async function monthlyRedisReset(ioInstance) {
 
     console.log('[Redis] Month changed, flushdb start');
 
+    // flushdb の前に messages:* キーを列挙しておく（通知対象ルーム取得のため）
     const keys = await scanKeys('messages:*');
     const targetRoomIds = keys.map((k) => k.slice('messages:'.length));
 
+    // 全 DB をフラッシュ
     await redisClient.flushdb();
+
+    // 月情報を保存
     await redisClient.set('system:current_month', currentMonth);
 
     const systemMessage = createSystemMessage('<strong>メンテナンスのためデータベースがリセットされました</strong>');
@@ -279,10 +278,10 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
   if (storedUsername !== username) {
     await redisClient.set(`username:${clientId}`, escapeHTML(username), 'EX', 60 * 60 * 24);
 
-    logUserAction(clientId, 'usernameChanged', {
+    logAction({ user: clientId, action: 'usernameChanged', extra: {
       oldUsername: storedUsername,
       newUsername: username,
-    });
+    }});
   }
 
   const muteKey = `msg:mute:${clientId}`;
@@ -327,7 +326,7 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
     const muteLevelKey = `msg:mute_level:${clientId}`;
     const lastMuteKey = `msg:last_mute:${clientId}`;
 
-    const ttl = await redisClient.ttl(muteKey) || 0;
+    const ttl = await redisClient.ttl(muteKey);
     let muteLevel = Number(await redisClient.get(muteLevelKey)) || 0;
     const lastMuteTime = Number(await redisClient.get(lastMuteKey)) || 0;
 
@@ -338,13 +337,13 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
     muteLevel++;
     const muteSeconds = Math.min(BASE_MUTE_SEC * 2 ** muteLevel, MAX_MUTE_SEC);
 
-    if (muteSeconds > ttl) {
+    if (muteSeconds > (ttl > 0 ? ttl : 0)) {
       await redisClient.set(muteKey, '1', 'EX', muteSeconds);
       await redisClient.set(muteLevelKey, muteLevel);
       await redisClient.set(lastMuteKey, now);
     }
 
-    logUserAction(clientId, 'messageMutedBySpam', { muteSeconds, muteLevel });
+    logAction({ user: clientId, action: 'messageMutedBySpam', extra: { muteSeconds, muteLevel } });
     emitUserToast(io, clientId, `スパムを検知したため${muteSeconds}秒間ミュートされました`, 'warning');
 
     // スパムカウントリセット
@@ -356,7 +355,7 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
   const storedMessage = {
     username: escapeHTML(username),
     message: escapeHTML(message),
-    time: formatJSTTime(new Date()),
+    time: formatJST(new Date()),
     seed,
   };
 
@@ -370,11 +369,11 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
     await redisClient.eval(luaScript, 1, roomKey, JSON.stringify(storedMessage));
 
     io.to(roomId).emit('newMessage', storedMessage);
-    logUserAction(clientId, 'sendMessage', {
+    logAction({ user: clientId, action: 'sendMessage', extra: {
       roomId,
       username: storedMessage.username,
       message: storedMessage.message,
-    });
+    }});
 
     res.json({ ok: true });
   } catch (err) {
@@ -408,7 +407,7 @@ app.post('/api/auth', async (req, res) => {
     await redisClient.set(`username:${clientId}`, escapeHTML(username), 'EX', 60 * 60 * 24);
 
     res.json({ token, clientId });
-    logUserAction(clientId, 'issueToken', { username });
+    logAction({ user: clientId, action: 'issueToken', extra: { username } });
     console.log(`[Auth] Token issued for clientId ${clientId}`);
   } catch (err) {
     console.error(err);
@@ -425,7 +424,7 @@ app.post('/api/clear', requireSocketSession, async (req, res) => {
 
   const username = await redisClient.get(`username:${clientId}`);
   if (password !== ADMIN_PASS) {
-    logUserAction(clientId, 'InvalidAdminPassword', { roomId, username });
+    logAction({ user: clientId, action: 'InvalidAdminPassword', extra: { roomId, username }});
 
     emitUserToast(io, clientId, '管理者パスワードが正しくありません', 'error');
     return res.sendStatus(403);
@@ -436,7 +435,7 @@ app.post('/api/clear', requireSocketSession, async (req, res) => {
   const last = await redisClient.get(rateKey);
 
   if (last && now - Number(last) < 30000) {
-    logUserAction(clientId, 'clearMessagesRateLimited', { roomId, username });
+    logAction({ user: clientId, action: 'clearMessagesRateLimited', extra: { roomId, username }});
     emitUserToast(io, clientId, '削除操作は30秒以上間隔をあけてください', 'warning');
     return res.sendStatus(429);
   }
@@ -448,7 +447,7 @@ app.post('/api/clear', requireSocketSession, async (req, res) => {
   await redisClient.del(`messages:${roomId}`);
   io.to(roomId).emit('clearMessages');
   emitRoomToast(io, roomId, '全メッセージ削除されました', 'info');
-  logUserAction(clientId, 'clearMessages', { roomId, username });
+  logAction({ user: clientId, action: 'clearMessages', extra: { roomId, username }});
 });
 
 // -------------------- Socket.IO --------------------
@@ -457,13 +456,13 @@ io.use(async (socket, next) => {
     // ---- Token チェック ----
     const token = socket.handshake.auth?.token;
     if (!token) {
-      logUserAction('unknown', 'invalidSocketToken');
+      logAction({ action: 'invalidSocketToken' });
       return next(new Error('Authentication required'));
     }
 
     const clientId = await validateAuthToken(token);
     if (!clientId) {
-      logUserAction('unknown', 'invalidSocketToken', { token });
+      logAction({ action: 'invalidSocketToken', extra: { token } });
       return next(new Error('Invalid token'));
     }
 
@@ -485,7 +484,7 @@ io.on('connection', (socket) => {
       return;
     }
     if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) {
-      logUserAction(socket.data.clientId, 'joinRoomFailed', { roomId });
+      logAction({ user: socket.data.clientId, action: 'joinRoomFailed', extra: { roomId }});
       return;
     }
 
@@ -495,7 +494,7 @@ io.on('connection', (socket) => {
     socket.data.roomId = roomId;
 
     const username = await redisClient.get(`username:${socket.data.clientId}`);
-    logUserAction(socket.data.clientId, 'joinRoom', { roomId, username });
+    logAction({ user: socket.data.clientId, action: 'joinRoom', extra: { roomId, username }});
 
     const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
     io.to(roomId).emit('roomUserCount', roomSize);
@@ -512,7 +511,7 @@ io.on('connection', (socket) => {
 
     if (socket.data.clientId) {
       const username = await redisClient.get(`username:${socket.data.clientId}`);
-      logUserAction(socket.data.clientId, 'disconnecting', { roomId, username });
+      logAction({ user: socket.data.clientId, action: 'disconnecting', extra: { roomId, username }});
     }
   });
 });
