@@ -101,7 +101,7 @@ async function checkIpRateLimit(key, limit, windowSec) {
 
 // -------------------- Origin 正規化チェック --------------------
 function isAllowedOrigin(origin, frontendUrl) {
-  if (!origin) return true;
+  if (!origin) return false;
 
   let originUrl;
   let frontendOrigin;
