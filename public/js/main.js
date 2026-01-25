@@ -508,7 +508,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     socket.on('roomUserCount', count => {
       if (typeof count === 'number' && elements.onlineUserCount) {
-        elements.onlineUserCount.textContent = `オンライン: ${count}`;
+        elements.onlineUserCount.textContent = `${count}`;
       }
     });
 
