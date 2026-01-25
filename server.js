@@ -89,15 +89,18 @@ async function logAction({ user, action, extra = {} } = {}) {
   if (user) {
     try {
       username = (await redisClient.get(`username:${user}`)) || '-';
-    } catch (e) {
+    } catch {
       username = '-';
     }
   }
 
-  const extraStr = extra && Object.keys(extra).length > 0 ? ` ${JSON.stringify(extra)}` : '';
+  const extraStr =
+    extra && Object.keys(extra).length > 0
+      ? ` ${JSON.stringify(extra)}`
+      : '';
 
   console.log(
-    `[${time}] [clientId:${clientId}] [Username:${username}] Action: ${action}${extraStr}`
+    `[${time}] [User:${clientId}] [Username:${username}] Action: ${action}${extraStr}`
   );
 }
 
@@ -373,7 +376,7 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
     logAction({
       user: clientId,
       action: 'sendMessage',
-      extra: { roomId, username: storedMessage.username, message: storedMessage.message },
+      extra: { roomId, message: storedMessage.message },
     });
 
     res.json({ ok: true });
@@ -402,7 +405,7 @@ app.post('/api/auth', async (req, res) => {
     await redisClient.set(`token:${token}`, clientId, 'EX', 60 * 60 * 24);
     await redisClient.set(`username:${clientId}`, escapeHTML(username), 'EX', 60 * 60 * 24);
 
-    logAction({ user: clientId, action: 'issueToken', extra: { username } });
+    logAction({ user: clientId, action: 'issueToken'});
     res.json({ token, clientId });
   } catch (err) {
     console.error(err);
@@ -419,7 +422,7 @@ app.post('/api/clear', requireSocketSession, async (req, res) => {
 
     const username = await redisClient.get(`username:${clientId}`);
     if (password !== ADMIN_PASS) {
-      logAction({ user: clientId, action: 'InvalidAdminPassword', extra: { roomId, username } });
+      logAction({ user: clientId, action: 'InvalidAdminPassword', extra: { roomId } });
       emitUserToast(io, clientId, '管理者パスワードが正しくありません', 'error');
       return res.sendStatus(403);
     }
@@ -428,7 +431,7 @@ app.post('/api/clear', requireSocketSession, async (req, res) => {
     const rateKey = `ratelimit:clear:${clientId}`;
     const last = await redisClient.get(rateKey);
     if (last && now - Number(last) < 30000) {
-      logAction({ user: clientId, action: 'clearMessagesRateLimited', extra: { roomId, username } });
+      logAction({ user: clientId, action: 'clearMessagesRateLimited', extra: { roomId } });
       emitUserToast(io, clientId, '削除操作は30秒以上間隔をあけてください', 'warning');
       return res.sendStatus(429);
     }
@@ -440,7 +443,7 @@ app.post('/api/clear', requireSocketSession, async (req, res) => {
     await redisClient.del(`messages:${roomId}`);
     io.to(roomId).emit('clearMessages');
     emitRoomToast(io, roomId, '全メッセージ削除されました', 'info');
-    logAction({ user: clientId, action: 'clearMessages', extra: { roomId, username } });
+    logAction({ user: clientId, action: 'clearMessages', extra: { roomId } });
 
     res.json({ ok: true });
   } catch (err) {
@@ -493,7 +496,7 @@ io.on('connection', (socket) => {
       socket.data.roomId = roomId;
 
       const username = await redisClient.get(`username:${socket.data.clientId}`);
-      logAction({ user: socket.data.clientId, action: 'joinRoom', extra: { roomId, username } });
+      logAction({ user: socket.data.clientId, action: 'joinRoom', extra: { roomId } });
 
       const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
       io.to(roomId).emit('roomUserCount', roomSize);
@@ -515,7 +518,7 @@ io.on('connection', (socket) => {
 
       if (socket.data.clientId) {
         const username = await redisClient.get(`username:${socket.data.clientId}`);
-        logAction({ user: socket.data.clientId, action: 'disconnecting', extra: { roomId, username } });
+        logAction({ user: socket.data.clientId, action: 'disconnecting', extra: { roomId } });
       }
     } catch (err) {
       console.error('disconnect handler error', err);
