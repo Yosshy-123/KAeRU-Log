@@ -276,24 +276,16 @@ app.get('/api/messages/:roomId', requireSocketSession, async (req, res) => {
 
 app.post('/api/messages', requireSocketSession, async (req, res) => {
   try {
-    const { username, message, seed, roomId } = req.body;
-    if (!roomId || !username || !message || !seed) return res.sendStatus(400);
+    const { message, seed, roomId } = req.body;
+    if (!roomId || !message || !seed) return res.sendStatus(400);
     if (!ROOM_ID_PATTERN.test(roomId)) return res.sendStatus(400);
-    if (username.length === 0 || username.length > 24) return res.sendStatus(400);
     if (message.length === 0 || message.length > 800) return res.sendStatus(400);
 
     const clientId = req.clientId;
     if (!clientId) return res.sendStatus(403);
 
-    const storedUsername = await redisClient.get(`username:${clientId}`);
-    if (storedUsername !== username) {
-      await redisClient.set(`username:${clientId}`, escapeHTML(username), 'EX', 60 * 60 * 24);
-      logAction({
-        user: clientId,
-        action: 'usernameChanged',
-        extra: { oldUsername: storedUsername, newUsername: username },
-      });
-    }
+    const username = await redisClient.get(`username:${clientId}`);
+    if (!username) return res.status(400).json({ error: 'Username not set' });
 
     const muteKey = `msg:mute:${clientId}`;
     if (await redisClient.exists(muteKey)) return res.sendStatus(429);
@@ -357,7 +349,7 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
     }
 
     const storedMessage = {
-      username: escapeHTML(username),
+      username,
       message: escapeHTML(message),
       time: formatJST(new Date()),
       seed,
@@ -378,6 +370,68 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
       action: 'sendMessage',
       extra: { roomId, message: storedMessage.message },
     });
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// -------------------- Username API --------------------
+app.post('/api/username', requireSocketSession, async (req, res) => {
+  try {
+    const clientId = req.clientId;
+    if (!clientId) return res.sendStatus(403);
+
+    const { username } = req.body;
+
+    if (
+      typeof username !== 'string' ||
+      username.trim().length === 0
+    ) {
+      emitUserToast(io, clientId, 'ユーザー名を入力してください', 'error');
+      return res.status(400).json({ error: 'Invalid username' });
+    }
+
+    if (username.length > 24) {
+      emitUserToast(io, clientId, 'ユーザー名は24文字以内にしてください', 'error');
+      return res.status(400).json({ error: 'Username too long' });
+    }
+
+    const sanitized = escapeHTML(username.trim());
+    const key = `username:${clientId}`;
+    const current = await redisClient.get(key);
+
+    // no-op
+    if (current === sanitized) {
+      return res.json({ ok: true });
+    }
+
+    // 変更頻度制限
+    const rateKey = `ratelimit:username:${clientId}`;
+    const now = Date.now();
+    const last = await redisClient.get(rateKey);
+    if (last && now - Number(last) < 30000) {
+      emitUserToast(
+        io,
+        clientId,
+        'ユーザー名の変更は30秒以上間隔をあけてください',
+        'warning'
+      );
+      return res.sendStatus(429);
+    }
+
+    await redisClient.set(rateKey, now, 'PX', 60000);
+    await redisClient.set(key, sanitized, 'EX', 60 * 60 * 24);
+
+    logAction({
+      user: clientId,
+      action: 'usernameChanged',
+      extra: { oldUsername: current, newUsername: sanitized },
+    });
+
+    emitUserToast(io, clientId, 'ユーザー名を変更しました', 'info');
 
     res.json({ ok: true });
   } catch (err) {
