@@ -12,9 +12,13 @@ const cors = require('cors');
 // -------------------- 環境変数 --------------------
 const PORT = process.env.PORT || 3000;
 const REDIS_URL = process.env.REDIS_URL;
-const ADMIN_PASS = process.env.ADMIN_PASS || 'adminkey1234';
+const ADMIN_PASS = process.env.ADMIN_PASS;
 const FRONTEND_URL = process.env.FRONTEND_URL;
 
+if (!ADMIN_PASS) {
+  console.error('ADMIN_PASS is not set');
+  process.exit(1);
+}
 if (!REDIS_URL) {
   console.error('REDIS_URL is not set');
   process.exit(1);
