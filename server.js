@@ -330,18 +330,16 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
       let muteLevel = Number(await redisClient.get(muteLevelKey)) || 0;
       const lastMuteTime = Number(await redisClient.get(lastMuteKey)) || 0;
 
+      // 10分以上経過でリセット
       if (ttl === -2 || now - lastMuteTime > 10 * 60 * 1000) {
-        muteLevel = 0; // 10分経過でリセット
+        muteLevel = 0;
       }
 
-      muteLevel++;
       const muteSeconds = Math.min(BASE_MUTE_SEC * 2 ** muteLevel, MAX_MUTE_SEC);
 
-      if (muteSeconds > (ttl > 0 ? ttl : 0)) {
-        await redisClient.set(muteKey, '1', 'EX', muteSeconds);
-        await redisClient.set(muteLevelKey, muteLevel);
-        await redisClient.set(lastMuteKey, now);
-      }
+      await redisClient.set(muteKey, '1', 'EX', muteSeconds);
+      await redisClient.set(muteLevelKey, muteLevel + 1);
+      await redisClient.set(lastMuteKey, now);
 
       logAction({ user: clientId, action: 'messageMutedBySpam', extra: { muteSeconds, muteLevel } });
       emitUserToast(io, clientId, `スパムを検知したため${muteSeconds}秒間ミュートされました`);
