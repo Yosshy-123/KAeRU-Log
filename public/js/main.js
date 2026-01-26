@@ -304,16 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
     button.textContent = '送信中…';
 
     try {
-      if (!myName) {
-        showToast('ユーザー名を設定してください');
-        openProfileModal();
-        isSending = false;
-        button.disabled = false;
-        button.textContent = '送信';
-        return;
-      }
-
-      const payload = overridePayload ?? { roomId, username: myName, message: text, seed: mySeed };
+      const payload = overridePayload ?? { roomId, message: text, seed: mySeed };
 
       if (!myToken) {
         pendingMessage = payload;
@@ -421,32 +412,41 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function saveProfile() {
-    const v = (elements.profileNameInput?.value || '').trim().slice(0, 24);
+  async function saveProfile() {
+    const v = (elements.profileNameInput?.value || '').trim();
     if (!v) {
-      showToast('ユーザー名は1〜24文字で設定してください');
+      showToast('ユーザー名は空です');
       return;
     }
+    if (v.length > 24) showToast('ユーザー名は24文字以内にしてください');
 
-    myName = v;
-    localStorage.setItem('chat_username', myName);
-    closeProfileModal();
-    showToast('プロフィールを保存しました');
-    focusInput();
+    try {
+      const res = await fetchWithAuth(`${SERVER_URL}/api/username`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: v })
+      });
 
-    if (!myToken) {
-      obtainToken()
-        .then(() => {
-          if (pendingMessage) {
-            const pm = pendingMessage;
-            pendingMessage = null;
-            sendMessage(pm);
-          }
-          if (!socket || !socket.connected) startConnection().catch(err => console.warn('startConnection failed', err));
-        })
-        .catch(() => showToast('認証に失敗しました'));
-    } else {
+      if (!res.ok) {
+        showToast('プロフィール保存に失敗しました');
+        return;
+      }
+
+      myName = v;
+      localStorage.setItem('chat_username', myName);
+      closeProfileModal();
+      showToast('プロフィールを保存しました');
+      focusInput();
+
       if (!socket || !socket.connected) startConnection().catch(err => console.warn('startConnection failed', err));
+      if (pendingMessage) {
+        const pm = pendingMessage;
+        pendingMessage = null;
+        sendMessage(pm);
+      }
+    } catch (e) {
+      console.error(e);
+      showToast('通信エラーが発生しました');
     }
   }
 
@@ -501,7 +501,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     socket.on('toast', data => {
       if (!data || typeof data !== 'object') return;
-      const { scope, message } = data;
+      const { message } = data;
       if (!message) return;
       showToastserver(message);
     });
