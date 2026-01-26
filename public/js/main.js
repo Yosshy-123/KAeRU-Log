@@ -467,14 +467,18 @@ document.addEventListener('DOMContentLoaded', () => {
   addEnterKeyForModal(elements.profileModal, saveProfile);
   addEnterKeyForModal(elements.adminModal, deleteAllMessages, closeAdminModal);
 
-  /* ---------- Socket.IO: 接続管理 ---------- */
+  /* ---------- Socket.IO ---------- */
   function joinRoom() {
     if (!socket) return;
     socket.emit('joinRoom', { roomId });
   }
 
   function createSocket() {
-    socket = io(SERVER_URL, { auth: { token: myToken || '' } });
+    if (socket && (socket.connected || (socket.io && socket.io.engine && !socket.io.engine.closed))) {
+      return;
+    }
+
+    socket = io(SERVER_URL, { auth: { token: myToken || '' }, transports: ['websocket'] });
 
     socket.on('connect', () => {
       setConnectionState('online');
@@ -517,21 +521,24 @@ document.addEventListener('DOMContentLoaded', () => {
       focusInput();
     });
 
-    socket.on('connect_error', err => {
+    socket.on('connect_error', async (err) => {
       console.warn('connect_error', err);
-      if (err && /Authentication|Invalid token|Authentication required/i.test(String(err.message || ''))) {
+      const msg = String((err && err.message) || '');
+      if (/Authentication|Invalid token|Authentication required/i.test(msg)) {
         myToken = null;
         localStorage.removeItem('chatToken');
-        obtainToken()
-          .then(() => {
-            if (socket) {
-              socket.auth = { token: myToken || '' };
-              socket.connect();
-            } else {
-              createSocket();
-            }
-          })
-          .catch(() => openProfileModal());
+        try {
+          await obtainToken();
+          if (socket) {
+            socket.auth = { token: myToken || '' };
+            try { socket.disconnect(); } catch (e) {}
+            try { socket.connect(); } catch (e) {}
+          } else {
+            createSocket();
+          }
+        } catch (e) {
+          openProfileModal();
+        }
       }
     });
   }
