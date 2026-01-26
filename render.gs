@@ -1,5 +1,5 @@
 function keepAlive() {
-  const url = 'https://kaeru-log.onrender.com/';
+  const url = 'https://kaeru-log.onrender.com/'; // 任意のURLに
   UrlFetchApp.fetch(url, { muteHttpExceptions: true });
 }
 
