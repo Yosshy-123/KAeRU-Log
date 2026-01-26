@@ -211,6 +211,8 @@ async function handleSpamCheck(clientId) {
 
 // -------------------- Toast通知 --------------------
 function emitUserToast(io, clientId, message) {
+  const room = io.sockets.adapter.rooms.get(`__user:${clientId}`);
+  if (!room) return;
   io.to(`__user:${clientId}`).emit('toast', {
     scope: 'user',
     message,
@@ -219,7 +221,7 @@ function emitUserToast(io, clientId, message) {
 }
 
 function emitRoomToast(io, roomId, message) {
-  if (!roomId) return;
+  if (!roomId || !io.sockets.adapter.rooms.get(roomId)) return;
   io.to(roomId).emit('toast', {
     scope: 'room',
     message,
@@ -581,20 +583,25 @@ io.on('connection', (socket) => {
 });
 
 // --- Socket.IO 用 asyncHandler ---
-const asyncHandlerSocket = (fn) => (...args) => {
-  const socket = args[0];
+const asyncHandlerSocket = (fn) => async (socket, ...args) => {
   if (!socket || typeof socket.emit !== 'function') {
-    console.error('Invalid socket in asyncHandlerSocket', args);
+    console.warn('Invalid socket in asyncHandlerSocket', args);
     return;
   }
-
-  Promise.resolve(fn(...args)).catch((err) => {
+  try {
+    await fn(socket, ...args);
+  } catch (err) {
     console.error('[Socket.IO] Error in handler:', err);
-    try {
+    if (socket && typeof socket.emit === 'function') {
       socket.emit('error', { message: 'Internal Server Error' });
-    } catch {}
-  });
+    }
+  }
 };
+
+function safeEmit(socket, event, payload) {
+  if (!socket || typeof socket.emit !== 'function') return;
+  socket.emit(event, payload);
+}
 
 // -------------------- SPA fallback --------------------
 app.use(express.static(`${__dirname}/public`));
