@@ -21,6 +21,7 @@
 
 ```
 /
+/
 ├─ .github/
 │  ├─ README.md
 │  ├─ README.ja.md
@@ -40,7 +41,8 @@
 ├─ server.js
 ├─ package.json
 ├─ LICENSE
-└─ render.yaml
+├─ render.yaml
+└─ render.gs
 ```
 
 ---
