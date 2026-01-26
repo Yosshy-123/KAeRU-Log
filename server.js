@@ -538,8 +538,6 @@ io.use(async (socket, next) => {
     socket.data.authenticated = true;
 
     socket.join(`__user:${clientId}`);
-
-    logAction({ user: clientId, action: 'socketConnected', extra: { socketId: socket.id } });
     next();
   } catch (err) {
     next(new Error('Authentication error'));
