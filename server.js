@@ -212,7 +212,7 @@ async function handleSpamCheck(clientId) {
 // -------------------- Toast通知 --------------------
 function emitUserToast(io, clientId, message) {
   const room = io.sockets.adapter.rooms.get(`__user:${clientId}`);
-  if (!room) return;
+  if (!room) return; // 無効ソケットや部屋が存在しない場合は無視
   io.to(`__user:${clientId}`).emit('toast', {
     scope: 'user',
     message,
@@ -221,7 +221,7 @@ function emitUserToast(io, clientId, message) {
 }
 
 function emitRoomToast(io, roomId, message) {
-  if (!roomId || !io.sockets.adapter.rooms.get(roomId)) return;
+  if (!roomId || !io.sockets.adapter.rooms.get(roomId)) return; // 無効
   io.to(roomId).emit('toast', {
     scope: 'room',
     message,
@@ -584,10 +584,13 @@ io.on('connection', (socket) => {
 
 // --- Socket.IO 用 asyncHandler ---
 const asyncHandlerSocket = (fn) => async (socket, ...args) => {
-  if (!socket || typeof socket.emit !== 'function') {
-    console.warn('Invalid socket in asyncHandlerSocket', args);
-    return;
+  if (!socket) {
+    return; // ソケットが undefined の場合は処理せず終了
   }
+  if (typeof socket.emit !== 'function') {
+    return; // ソケットが無効でも終了
+  }
+
   try {
     await fn(socket, ...args);
   } catch (err) {
