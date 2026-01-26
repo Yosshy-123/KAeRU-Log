@@ -23,7 +23,7 @@ function keepAlive() {
   const now = new Date();
   const hour = now.getHours(); // 0〜23
 
-  // 🌙 夜間停止（23:00〜5:00）
+  // 夜間停止（23:00〜5:00）
   if (hour >= 23 || hour < 5) {
     console.log('night time → skip keepAlive');
     scheduleMorningRestart();
