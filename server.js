@@ -580,17 +580,20 @@ io.on('connection', (socket) => {
 });
 
 // --- Socket.IO 用 asyncHandler ---
-const asyncHandlerSocket = (fn) => async (socket, ...args) => {
-  try {
-    await fn(socket, ...args);
-  } catch (err) {
-    console.error(`[Socket.IO] Error in handler:`, err);
-    if (socket && socket.emit) {
-      socket.emit('error', { message: err.message || 'Internal Server Error' });
-    }
+const asyncHandlerSocket = (fn) => (...args) => {
+  const socket = args[0];
+  if (!socket || typeof socket.emit !== 'function') {
+    console.error('Invalid socket in asyncHandlerSocket', args);
+    return;
   }
-};
 
+  Promise.resolve(fn(...args)).catch((err) => {
+    console.error('[Socket.IO] Error in handler:', err);
+    try {
+      socket.emit('error', { message: 'Internal Server Error' });
+    } catch {}
+  });
+};
 
 // -------------------- SPA fallback --------------------
 app.use(express.static(`${__dirname}/public`));
