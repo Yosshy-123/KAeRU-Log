@@ -277,7 +277,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.set('trust proxy', true);
+app.set('trust proxy', true); // Render 用
 
 const httpServer = http.createServer(app);
 const io = new SocketIOServer(httpServer, {
