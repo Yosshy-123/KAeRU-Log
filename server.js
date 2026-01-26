@@ -413,12 +413,14 @@ app.post('/api/username', requireSocketSession, async (req, res) => {
     const now = Date.now();
     const last = await redisClient.get(rateKey);
     if (last && now - Number(last) < 30000) {
-      emitUserToast(
-        io,
-        clientId,
-        'ユーザー名の変更は30秒以上間隔をあけてください',
-        'warning'
-      );
+      emitUserToast(io, clientId, 'ユーザー名の変更は30秒以上間隔をあけてください');
+
+      logAction({
+        user: clientId,
+        action: 'usernameChangeRateLimited',
+        extra: { roomId: req.body.roomId || '-' }
+      });
+
       return res.sendStatus(429);
     }
 
