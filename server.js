@@ -129,21 +129,19 @@ async function checkIpRateLimit(key, limit, windowSec) {
 }
 
 // -------------------- Toast通知 --------------------
-function emitUserToast(io, clientId, message, type = 'info') {
+function emitUserToast(io, clientId, message) {
   io.to(`__user:${clientId}`).emit('toast', {
     scope: 'user',
     message,
-    type,
     time: Date.now(),
   });
 }
 
-function emitRoomToast(io, roomId, message, type = 'info') {
+function emitRoomToast(io, roomId, message) {
   if (!roomId) return;
   io.to(roomId).emit('toast', {
     scope: 'room',
     message,
-    type,
     time: Date.now(),
   });
 }
@@ -298,7 +296,7 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
     const lastSent = await redisClient.get(rateKey);
     const now = Date.now();
     if (lastSent && now - Number(lastSent) < MESSAGE_RATE_LIMIT_MS) {
-      emitUserToast(io, clientId, '送信間隔が短すぎます', 'warning');
+      emitUserToast(io, clientId, '送信間隔が短すぎます');
       return res.sendStatus(429);
     }
     await redisClient.set(rateKey, now, 'PX', MESSAGE_RATE_LIMIT_MS);
@@ -346,7 +344,7 @@ app.post('/api/messages', requireSocketSession, async (req, res) => {
       }
 
       logAction({ user: clientId, action: 'messageMutedBySpam', extra: { muteSeconds, muteLevel } });
-      emitUserToast(io, clientId, `スパムを検知したため${muteSeconds}秒間ミュートされました`, 'warning');
+      emitUserToast(io, clientId, `スパムを検知したため${muteSeconds}秒間ミュートされました`);
 
       await redisClient.del(repeatCountKey);
       return res.sendStatus(429);
@@ -394,12 +392,12 @@ app.post('/api/username', requireSocketSession, async (req, res) => {
       typeof username !== 'string' ||
       username.trim().length === 0
     ) {
-      emitUserToast(io, clientId, 'ユーザー名を入力してください', 'error');
+      emitUserToast(io, clientId, 'ユーザー名を入力してください');
       return res.status(400).json({ error: 'Invalid username' });
     }
 
     if (username.length > 24) {
-      emitUserToast(io, clientId, 'ユーザー名は24文字以内にしてください', 'error');
+      emitUserToast(io, clientId, 'ユーザー名は24文字以内にしてください');
       return res.status(400).json({ error: 'Username too long' });
     }
 
@@ -430,13 +428,23 @@ app.post('/api/username', requireSocketSession, async (req, res) => {
     await redisClient.set(rateKey, now, 'PX', 60000);
     await redisClient.set(key, sanitized, 'EX', 60 * 60 * 24);
 
-    logAction({
-      user: clientId,
-      action: 'usernameChanged',
-      extra: { oldUsername: current, newUsername: sanitized },
-    });
-
-    emitUserToast(io, clientId, 'ユーザー名を変更しました', 'info');
+    if (!current) {
+      // 初回登録の場合
+      logAction({
+        user: clientId,
+        action: 'usernameSet',
+        extra: { newUsername: sanitized },
+      });
+      emitUserToast(io, clientId, 'ユーザー名が登録されました');
+    } else {
+      // 既存ユーザーの変更の場合
+      logAction({
+        user: clientId,
+        action: 'usernameChanged',
+        extra: { oldUsername: current, newUsername: sanitized },
+      });
+      emitUserToast(io, clientId, 'ユーザー名を変更しました');
+    }
 
     res.json({ ok: true });
   } catch (err) {
@@ -482,7 +490,7 @@ app.post('/api/clear', requireSocketSession, async (req, res) => {
     const username = await redisClient.get(`username:${clientId}`);
     if (password !== ADMIN_PASS) {
       logAction({ user: clientId, action: 'InvalidAdminPassword', extra: { roomId } });
-      emitUserToast(io, clientId, '管理者パスワードが正しくありません', 'error');
+      emitUserToast(io, clientId, '管理者パスワードが正しくありません');
       return res.sendStatus(403);
     }
 
@@ -491,7 +499,7 @@ app.post('/api/clear', requireSocketSession, async (req, res) => {
     const last = await redisClient.get(rateKey);
     if (last && now - Number(last) < 30000) {
       logAction({ user: clientId, action: 'clearMessagesRateLimited', extra: { roomId } });
-      emitUserToast(io, clientId, '削除操作は30秒以上間隔をあけてください', 'warning');
+      emitUserToast(io, clientId, '削除操作は30秒以上間隔をあけてください');
       return res.sendStatus(429);
     }
 
@@ -501,7 +509,7 @@ app.post('/api/clear', requireSocketSession, async (req, res) => {
 
     await redisClient.del(`messages:${roomId}`);
     io.to(roomId).emit('clearMessages');
-    emitRoomToast(io, roomId, '全メッセージ削除されました', 'info');
+    emitRoomToast(io, roomId, '全メッセージ削除されました');
     logAction({ user: clientId, action: 'clearMessages', extra: { roomId } });
 
     res.json({ ok: true });
