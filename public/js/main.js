@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let roomId = path[1];
 
   if (path[0] !== 'room' || !roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) {
-    location.replace('/room/open');
+    location.replace('/room/general');
     return;
   }
 
