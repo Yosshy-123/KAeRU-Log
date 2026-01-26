@@ -614,18 +614,6 @@ function errorHandler(err, req, res, next) {
 // 最後に登録
 app.use(errorHandler);
 
-// --- Socket.IO 用 asyncHandler ---
-const asyncHandlerSocket = (fn) => async (socket, ...args) => {
-  try {
-    await fn(socket, ...args);
-  } catch (err) {
-    console.error(`[Socket.IO] Error in handler:`, err);
-    if (socket && typeof socket.emit === 'function') {
-      socket.emit('error', { message: 'Internal Server Error' });
-    }
-  }
-};
-
 // -------------------- サーバー起動 --------------------
 (async () => {
   try {
