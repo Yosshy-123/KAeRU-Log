@@ -418,7 +418,6 @@ app.post('/api/username', requireSocketSession, async (req, res) => {
       logAction({
         user: clientId,
         action: 'usernameChangeRateLimited',
-        extra: { roomId: req.body.roomId || '-' }
       });
 
       return res.sendStatus(429);
