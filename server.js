@@ -507,6 +507,8 @@ app.post('/api/clear', requireSocketSession, asyncHandler(clearMessagesHandler))
 // -------------------- Socket.IO middleware & handlers --------------------
 io.use(async (socket, next) => {
   try {
+    socket.data = socket.data || {};
+
     const token = socket.handshake.auth?.token;
     if (!token) {
       logAction({ user: null, action: 'invalidSocketToken' });
@@ -531,12 +533,17 @@ io.use(async (socket, next) => {
 });
 
 io.on('connection', (socket) => {
-  socket.on('joinRoom', asyncHandlerSocket(async (socket, data = {}) => {
+  const safeHandler = asyncHandlerSocket;
+
+  socket.on('joinRoom', safeHandler(async (socket, data = {}) => {
+    socket.data = socket.data || {};
     const { roomId } = data;
+
     if (!socket.data.authenticated || !socket.data.clientId) {
       socket.emit('authRequired');
       return;
     }
+
     if (!roomId || !ROOM_ID_PATTERN.test(roomId)) {
       logAction({ user: socket.data.clientId, action: 'joinRoomFailed', extra: { roomId } });
       return;
@@ -555,7 +562,8 @@ io.on('connection', (socket) => {
     socket.emit('joinedRoom', { roomId });
   }));
 
-  socket.on('disconnect', asyncHandlerSocket(async (socket) => {
+  socket.on('disconnect', safeHandler(async (socket) => {
+    socket.data = socket.data || {};
     const roomId = socket.data.roomId;
     socket.data.authenticated = false;
 
@@ -570,6 +578,19 @@ io.on('connection', (socket) => {
     }
   }));
 });
+
+// --- Socket.IO 用 asyncHandler ---
+const asyncHandlerSocket = (fn) => async (socket, ...args) => {
+  try {
+    await fn(socket, ...args);
+  } catch (err) {
+    console.error(`[Socket.IO] Error in handler:`, err);
+    if (socket && socket.emit) {
+      socket.emit('error', { message: err.message || 'Internal Server Error' });
+    }
+  }
+};
+
 
 // -------------------- SPA fallback --------------------
 app.use(express.static(`${__dirname}/public`));
