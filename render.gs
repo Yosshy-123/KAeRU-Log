@@ -25,7 +25,7 @@ function keepAlive() {
 
   // 夜間停止（23:00〜5:00）
   if (hour >= 23 || hour < 5) {
-    console.log('night time → skip keepAlive');
+    console.log('Skip keepAlive at night);
     scheduleMorningRestart();
     return;
   }
