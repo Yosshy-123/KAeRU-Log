@@ -39,6 +39,7 @@ const MAX_MUTE_SEC = 60 * 10; // 10 minutes
 const SPAM_CHECK_WINDOW = 60; // 連続送信カウント用 TTL
 const MESSAGE_RATE_LIMIT_MS = 1000;
 const REPEAT_LIMIT = 3;
+const ROOM_ID_PATTERN = /^[a-zA-Z0-9_-]{1,32}$/;
 
 // -------------------- ヘルパー関数 --------------------
 function escapeHTML(str = '') {
@@ -133,7 +134,6 @@ async function getOrResetByTTL(key, defaultValue = 0, expireSec = 0) {
   let value = Number(await redisClient.get(key)) || 0;
   const ttl = await redisClient.ttl(key);
 
-  // TTL切れの場合は初期化
   if (ttl === -2) {
     value = defaultValue;
     if (expireSec > 0) {
@@ -149,14 +149,12 @@ async function applySpamMute(clientId) {
   const muteLevelKey = `msg:mute_level:${clientId}`;
   const lastMuteKey = `msg:last_mute:${clientId}`;
 
-  // ミュートレベルをTTLチェック付きで取得
   let muteLevel = await getOrResetByTTL(muteLevelKey, 0, 10 * 60);
 
   const muteSeconds = Math.min(BASE_MUTE_SEC * 2 ** muteLevel, MAX_MUTE_SEC);
 
-  // ミュート情報をRedisに保存
   await redisClient.set(muteKey, '1', 'EX', muteSeconds);
-  await redisClient.set(muteLevelKey, muteLevel + 1, 'EX', 10 * 60); // ミュートレベルは10分でリセット
+  await redisClient.set(muteLevelKey, muteLevel + 1, 'EX', 10 * 60);
   await redisClient.set(lastMuteKey, Date.now(), 'EX', 10 * 60);
 
   return muteSeconds;
@@ -209,20 +207,33 @@ async function handleSpamCheck(clientId) {
   return 0;
 }
 
-// -------------------- Toast通知 --------------------
-function emitUserToast(io, clientId, message) {
-  const room = io.sockets.adapter.rooms.get(`__user:${clientId}`);
-  if (!room) return; // 無効ソケットや部屋が存在しない場合は無視
-  io.to(`__user:${clientId}`).emit('toast', {
+// -------------------- Safe emit helpers --------------------
+function safeEmitSocket(socket, event, payload) {
+  if (!socket || typeof socket.emit !== 'function') return false;
+  try {
+    socket.emit(event, payload);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function emitUserToast(ioInstance, clientId, message) {
+  // check if there is at least one socket in user room
+  const room = ioInstance.sockets.adapter.rooms.get(`__user:${clientId}`);
+  if (!room || room.size === 0) return;
+  ioInstance.to(`__user:${clientId}`).emit('toast', {
     scope: 'user',
     message,
     time: Date.now(),
   });
 }
 
-function emitRoomToast(io, roomId, message) {
-  if (!roomId || !io.sockets.adapter.rooms.get(roomId)) return; // 無効
-  io.to(roomId).emit('toast', {
+function emitRoomToast(ioInstance, roomId, message) {
+  if (!roomId) return;
+  const room = ioInstance.sockets.adapter.rooms.get(roomId);
+  if (!room || room.size === 0) return;
+  ioInstance.to(roomId).emit('toast', {
     scope: 'room',
     message,
     time: Date.now(),
@@ -342,7 +353,7 @@ const requireSocketSession = createRequireSocketSession();
 // -------------------- API --------------------
 async function getMessagesHandler(req, res) {
   const roomId = req.params.roomId;
-  if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return res.sendStatus(400);
+  if (!ROOM_ID_PATTERN.test(roomId)) return res.sendStatus(400);
 
   const rawMessages = await redisClient.lrange(`messages:${roomId}`, 0, -1);
   const messages = rawMessages.map((m) => {
@@ -363,7 +374,7 @@ app.get('/api/messages/:roomId', requireSocketSession, asyncHandler(getMessagesH
 async function postMessageHandler(req, res) {
   const { message, seed, roomId } = req.body;
   if (!roomId || !message || !seed) return res.sendStatus(400);
-  if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return res.sendStatus(400);
+  if (!ROOM_ID_PATTERN.test(roomId)) return res.sendStatus(400);
   if (message.length === 0 || message.length > 800) return res.sendStatus(400);
 
   const clientId = req.clientId;
@@ -493,7 +504,7 @@ async function clearMessagesHandler(req, res) {
     return res.sendStatus(429);
   }
 
-  if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return res.sendStatus(400);
+  if (!roomId || !ROOM_ID_PATTERN.test(roomId)) return res.sendStatus(400);
 
   await redisClient.del(`messages:${roomId}`);
   io.to(roomId).emit('clearMessages');
@@ -508,6 +519,7 @@ app.post('/api/clear', requireSocketSession, asyncHandler(clearMessagesHandler))
 // -------------------- Socket.IO middleware & handlers --------------------
 io.use(async (socket, next) => {
   try {
+    // ensure socket.data exists
     socket.data = socket.data || {};
 
     const token = socket.handshake.auth?.token;
@@ -527,6 +539,7 @@ io.use(async (socket, next) => {
 
     socket.join(`__user:${clientId}`);
 
+    logAction({ user: clientId, action: 'socketConnected', extra: { socketId: socket.id } });
     next();
   } catch (err) {
     next(new Error('Authentication error'));
@@ -534,77 +547,68 @@ io.use(async (socket, next) => {
 });
 
 io.on('connection', (socket) => {
-  const safeHandler = asyncHandlerSocket;
+  const wrap = (fn) => (...args) => {
+    if (!socket) {
+      console.warn('Invalid socket in handler (socket missing)', args);
+      return;
+    }
+    if (typeof socket.emit !== 'function') {
+      console.warn('Invalid socket in handler (emit missing)', args);
+      return;
+    }
+    Promise.resolve(fn(socket, ...args)).catch((err) => {
+      console.error('[Socket.IO] Error in handler:', err);
+      try {
+        socket.emit('error', { message: err.message || 'Internal Server Error' });
+      } catch (e) {
+        // ignore
+      }
+    });
+  };
 
-  socket.on('joinRoom', async (data = {}) => {
+  // joinRoom event
+  socket.on('joinRoom', wrap(async (socket, data = {}) => {
+    const { roomId } = data;
+    if (!socket.data?.authenticated || !socket.data?.clientId) {
+      safeEmitSocket(socket, 'authRequired', {});
+      return;
+    }
+    if (!roomId || !ROOM_ID_PATTERN.test(roomId)) {
+      logAction({ user: socket.data.clientId, action: 'joinRoomFailed', extra: { roomId } });
+      return;
+    }
+
+    if (socket.data.roomId) socket.leave(socket.data.roomId);
+
+    socket.join(roomId);
+    socket.data.roomId = roomId;
+
+    const username = await redisClient.get(`username:${socket.data.clientId}`);
+    logAction({ user: socket.data.clientId, action: 'joinRoom', extra: { roomId } });
+
+    const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
+    io.to(roomId).emit('roomUserCount', roomSize);
+    safeEmitSocket(socket, 'joinedRoom', { roomId });
+  }));
+
+  socket.on('disconnect', async (reason) => {
     try {
-      const { roomId } = data;
-      if (!socket.data.authenticated || !socket.data.clientId) {
-        socket.emit('authRequired');
-        return;
-      }
-      if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) {
-        logAction({ user: socket.data.clientId, action: 'joinRoomFailed', extra: { roomId } });
-        return;
+      const roomId = socket.data?.roomId;
+      const clientId = socket.data?.clientId;
+
+      if (roomId) {
+        const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
+        io.to(roomId).emit('roomUserCount', roomSize);
       }
 
-      if (socket.data.roomId) socket.leave(socket.data.roomId);
-
-      socket.join(roomId);
-      socket.data.roomId = roomId;
-
-      const username = await redisClient.get(`username:${socket.data.clientId}`);
-      logAction({ user: socket.data.clientId, action: 'joinRoom', extra: { roomId } });
-
-      const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
-      io.to(roomId).emit('roomUserCount', roomSize);
-      socket.emit('joinedRoom', { roomId });
+      if (clientId) {
+        logAction({ user: clientId, action: 'disconnect', extra: { roomId, reason } });
+      }
     } catch (err) {
-      console.error('[Socket.IO] joinRoom handler error:', err);
-      socket.emit('error', { message: 'Internal Server Error' });
+      console.error('Error in disconnect handler', err);
     }
   });
-
-  socket.on('disconnect', safeHandler(async (socket) => {
-    socket.data = socket.data || {};
-    const roomId = socket.data.roomId;
-    socket.data.authenticated = false;
-
-    if (roomId) {
-      const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
-      io.to(roomId).emit('roomUserCount', roomSize);
-    }
-
-    if (socket.data.clientId) {
-      const username = await redisClient.get(`username:${socket.data.clientId}`);
-      logAction({ user: socket.data.clientId, action: 'disconnecting', extra: { roomId } });
-    }
-  }));
 });
-
-// --- Socket.IO 用 asyncHandler ---
-const asyncHandlerSocket = (fn) => async (socket, ...args) => {
-  if (!socket) {
-    return; // ソケットが undefined の場合は処理せず終了
-  }
-  if (typeof socket.emit !== 'function') {
-    return; // ソケットが無効でも終了
-  }
-
-  try {
-    await fn(socket, ...args);
-  } catch (err) {
-    console.error('[Socket.IO] Error in handler:', err);
-    if (socket && typeof socket.emit === 'function') {
-      socket.emit('error', { message: 'Internal Server Error' });
-    }
-  }
-};
-
-function safeEmit(socket, event, payload) {
-  if (!socket || typeof socket.emit !== 'function') return;
-  socket.emit(event, payload);
-}
 
 // -------------------- SPA fallback --------------------
 app.use(express.static(`${__dirname}/public`));
@@ -625,7 +629,6 @@ function errorHandler(err, req, res, next) {
   res.status(status).json({ error: message });
 }
 
-// 最後に登録
 app.use(errorHandler);
 
 // -------------------- サーバー起動 --------------------
