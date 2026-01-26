@@ -1,8 +1,3 @@
-function keepAlive() {
-  const url = 'https://kaeru-log.onrender.com/'; // 任意のURLに
-  UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-}
-
 function setupTrigger() {
   const triggers = ScriptApp.getProjectTriggers();
   triggers.forEach(t => {
@@ -15,4 +10,9 @@ function setupTrigger() {
     .timeBased()
     .everyMinutes(10)
     .create();
+}
+
+function keepAlive() {
+  const url = 'https://kaeru-log.onrender.com/'; // 任意のURLに
+  UrlFetchApp.fetch(url, { muteHttpExceptions: true });
 }
