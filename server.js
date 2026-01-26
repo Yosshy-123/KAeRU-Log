@@ -531,7 +531,8 @@ io.use(async (socket, next) => {
 });
 
 io.on('connection', (socket) => {
-  socket.on('joinRoom', asyncHandlerSocket(async (socket, { roomId }) => {
+  socket.on('joinRoom', asyncHandlerSocket(async (socket, data = {}) => {
+    const { roomId } = data;
     if (!socket.data.authenticated || !socket.data.clientId) {
       socket.emit('authRequired');
       return;
@@ -598,7 +599,9 @@ const asyncHandlerSocket = (fn) => async (socket, ...args) => {
     await fn(socket, ...args);
   } catch (err) {
     console.error(`[Socket.IO] Error in handler:`, err);
-    socket.emit('error', { message: 'Internal Server Error' });
+    if (socket && typeof socket.emit === 'function') {
+      socket.emit('error', { message: 'Internal Server Error' });
+    }
   }
 };
 
