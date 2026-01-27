@@ -1,4 +1,3 @@
-// utils/socketWrapper.js
 module.exports = function createHandlerWrapper({ redisClient, io, logAction, safeEmitSocket }) {
   return function createWrapper(socket) {
     return (fn) => (...args) => {
