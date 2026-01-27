@@ -250,9 +250,36 @@ async function postMessageHandler(req, res) {
   if (!username) return res.status(400).json({ error: 'Username not set' });
 
   const spamResult = await spamService.check(clientId);
+
+  if (spamResult.rejected) {
+    if (spamResult.muted) {
+      emitUserToast(
+        io,
+        clientId,
+        spamResult.muteSec
+          ? `スパムを検知したため${spamResult.muteSec}秒間ミュートされました`
+          : '送信が制限されています'
+      );
+    }
+    await safeLogAction({
+      user: clientId,
+      action: 'sendMessageRejected',
+      extra: { reason: spamResult.reason || 'rate-limit' },
+    });
+    return res.sendStatus(429);
+  }
+
   if (spamResult.muted) {
-    emitUserToast(io, clientId, spamResult.muteSec ? `スパムを検知したため${spamResult.muteSec}秒間ミュートされました` : '送信が制限されています');
-    await safeLogAction({ user: clientId, action: 'sendMessageBlocked', extra: { reason: spamResult.reason || 'spam' } });
+    emitUserToast(
+      io,
+      clientId,
+      `スパムを検知したため${spamResult.muteSec}秒間ミュートされました`
+    );
+    await safeLogAction({
+      user: clientId,
+      action: 'sendMessageBlocked',
+      extra: { reason: spamResult.reason || 'spam' },
+    });
     return res.sendStatus(429);
   }
 
