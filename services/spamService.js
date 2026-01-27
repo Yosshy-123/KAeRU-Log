@@ -38,48 +38,34 @@ module.exports = function createSpamService(redis, logger, KEYS, config = {}) {
 
   // interval / repeat spam detection
   async function checkIntervalSpam(clientId) {
-    const lastTimeKey = KEYS.spamLastTime(clientId);
-    const repeatCountKey = KEYS.spamRepeatCount(clientId);
-    const muteLevelKey = KEYS.muteLevel(clientId);
+    const burstKey = KEYS.spamRepeatCount(clientId);
     const muteKey = KEYS.mute(clientId);
+    const muteLevelKey = KEYS.muteLevel(clientId);
+
+    const BURST_LIMIT = 2;
 
     try {
-      const now = Date.now();
-      const lastTimeRaw = await redis.get(lastTimeKey);
-      const repeatRaw = await redis.get(repeatCountKey);
+      const count = await redis.incr(burstKey);
 
-      const lastTime = Number(lastTimeRaw) || 0;
-      let count = Number(repeatRaw) || 0;
-
-      const interval = lastTime ? now - lastTime : Infinity;
-
-      if (interval < MESSAGE_RATE_LIMIT_MS) {
-        count++;
-      } else {
-        count = 1;
+      if (count === 1) {
+        await redis.expire(burstKey, Math.ceil(MESSAGE_RATE_LIMIT_SEC));
       }
 
-      const pipeline = redis.pipeline();
-      pipeline.set(lastTimeKey, String(now), 'EX', SPAM_CHECK_WINDOW);
-      pipeline.set(repeatCountKey, String(count), 'EX', SPAM_CHECK_WINDOW);
-      await pipeline.exec();
-
-      if (count >= REPEAT_LIMIT) {
-        const currentLevelRaw = await redis.get(muteLevelKey);
-        const currentLevel = Number(currentLevelRaw) || 0;
-        const muteSec = calcMuteSeconds(currentLevel);
+      if (count >= BURST_LIMIT) {
+        const level = Number(await redis.get(muteLevelKey)) || 0;
+        const muteSec = calcMuteSeconds(level);
 
         const pl = redis.pipeline();
         pl.set(muteKey, '1', 'EX', muteSec);
-        pl.set(muteLevelKey, String(currentLevel + 1), 'EX', 10 * 60);
+        pl.set(muteLevelKey, String(level + 1), 'EX', 10 * 60);
+        pl.del(burstKey);
         await pl.exec();
 
         return muteSec;
       }
 
       return 0;
-    } catch (err) {
-      // fail-open
+    } catch {
       return 0;
     }
   }
