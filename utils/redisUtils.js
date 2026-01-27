@@ -1,41 +1,43 @@
-/**
- * getOrResetByTTLSec
- * - expireSec は秒単位
- * - 戻り値は Number(value) or defaultValue
- */
-async function getOrResetByTTLSec(redisClient, key, defaultValue = 0, expireSec = 0) {
-  const raw = await redisClient.get(key);
-  let value = raw == null ? defaultValue : Number(raw) || 0;
-  const ttl = await redisClient.ttl(key);
+module.exports = {
+  async checkRateLimitMs(redisClient, key, windowMs) {
+    try {
+      const last = await redisClient.get(key);
+      const now = Date.now();
+      if (last && now - Number(last) < windowMs) return false;
+      await redisClient.set(key, String(now), 'PX', windowMs);
+      return true;
+    } catch (err) {
+      // On redis error, allow (fail-open)
+      return true;
+    }
+  },
 
-  if (ttl === -2 && expireSec > 0) {
-    await redisClient.set(key, value, 'EX', expireSec);
-  }
-  return value;
-}
+  async getOrResetByTTLSec(redisClient, key, defaultValue = 0, expireSec = 0) {
+    try {
+      const raw = await redisClient.get(key);
+      let value = raw == null ? defaultValue : Number(raw) || 0;
+      const ttl = await redisClient.ttl(key);
+      if (ttl === -2 && expireSec > 0) {
+        await redisClient.set(key, String(value), 'EX', expireSec);
+      }
+      return value;
+    } catch (err) {
+      return defaultValue;
+    }
+  },
 
-/**
- * checkRateLimitMs -- windowMs はミリ秒単位のレート制限（最後の時刻を PX で保存）
- * - key: unique key
- * - windowMs: milliseconds
- */
-async function checkRateLimitMs(redisClient, key, windowMs) {
-  const last = await redisClient.get(key);
-  const now = Date.now();
-  if (last && now - Number(last) < windowMs) return false;
-  // store as PX (ms)
-  await redisClient.set(key, String(now), 'PX', windowMs);
-  return true;
-}
-
-/**
- * checkCountLimitSec -- windowSec は秒単位でカウントするもの
- */
-async function checkCountLimitSec(redisClient, key, limit, windowSec) {
-  const count = Number(await getOrResetByTTLSec(redisClient, key, 0, windowSec));
-  if (count + 1 > limit) return false;
-  await redisClient.incr(key);
-  return true;
-}
-
-module.exports = { getOrResetByTTLSec, checkRateLimitMs, checkCountLimitSec };
+  async checkCountLimitSec(redisClient, key, limit, windowSec) {
+    try {
+      const count = Number(await redisClient.get(key)) || 0;
+      if (count + 1 > limit) return false;
+      const pipeline = redisClient.pipeline();
+      pipeline.incr(key);
+      pipeline.expire(key, windowSec);
+      await pipeline.exec();
+      return true;
+    } catch (err) {
+      // fail-open
+      return true;
+    }
+  },
+};
