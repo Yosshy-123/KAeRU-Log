@@ -7,11 +7,11 @@ const { Server: SocketIOServer } = require('socket.io');
 const crypto = require('crypto');
 const Redis = require('ioredis');
 
-const KEYS = require('./lib/redisKeys'); // see preconditions above
+const KEYS = require('./lib/redisKeys');
 const { pushAndTrimList, processKeysByPattern } = require('./lib/redisHelpers');
 const createSpamService = require('./services/spamService');
-const { checkRateLimitMs } = require('./utils/redisUtils'); // we use ms-based rate helper
-const rawLogAction = require('./utils/logger'); // expects signature: async (redisClient, {user,action,extra})
+const { checkRateLimitMs } = require('./utils/redisUtils');
+const rawLogAction = require('./utils/logger');
 const createWrapperFactory = require('./utils/socketWrapper');
 const cron = require('node-cron');
 const cors = require('cors');
@@ -42,7 +42,6 @@ redisClient.on('error', (err) => console.error('Redis error', err));
 
 // -------------------- 設定値 --------------------
 const MESSAGE_RATE_LIMIT_MS = 1000;
-const ROOM_ID_PATTERN = /^[a-zA-Z0-9_-]{1,32}$/;
 
 // -------------------- ユーティリティ関数 --------------------
 function escapeHTML(str = '') {
@@ -86,13 +85,11 @@ function createSystemMessage(htmlMessage) {
   };
 }
 
-// -------------------- ログラッパー（失敗耐性） --------------------
+// -------------------- ログラッパー --------------------
 async function safeLogAction(payload) {
   try {
-    // rawLogAction is assumed to accept (redisClient, payload)
     await rawLogAction(redisClient, payload);
   } catch (err) {
-    // never throw from logging
     console.error('[safeLogAction] log failed', err);
   }
 }
@@ -178,15 +175,13 @@ const io = new SocketIOServer(httpServer, {
 });
 
 // -------------------- サービス初期化 --------------------
-// spamService: expects signature createSpamService(redis, logger, KEYS, config)
 const spamService = createSpamService(redisClient, safeLogAction, KEYS, {
   messageRateLimitMs: MESSAGE_RATE_LIMIT_MS,
 });
 
-// wrapperFactory: expects signature createWrapperFactory({redisClient, io, log, safeEmitSocket})
 const wrapperFactory = createWrapperFactory({ redisClient, io, log: safeLogAction, safeEmitSocket });
 
-// -------------------- Monthly Redis Reset（messages:* のみ削除） --------------------
+// -------------------- Monthly Redis Reset --------------------
 async function monthlyRedisReset(ioInstance) {
   const now = new Date();
   const jstNow = toJST(now);
@@ -200,38 +195,24 @@ async function monthlyRedisReset(ioInstance) {
     const locked = await redisClient.set(lockKey, '1', 'NX', 'EX', 30);
     if (!locked) return;
 
-    console.log('[Redis] Month changed, deleting messages:* keys (safe)');
+    console.log('[Redis] Month changed, running FLUSHDB');
 
-    // collect roomIds incrementally (no global memory blow)
-    const roomIds = new Set();
-    await processKeysByPattern(redisClient, KEYS.messagesPattern(), async (keys) => {
-      keys.forEach((k) => {
-        const prefix = 'messages:';
-        if (k.startsWith(prefix)) roomIds.add(k.slice(prefix.length));
-      });
-    });
-
-    // delete messages:* in streaming fashion using helper
-    await processKeysByPattern(redisClient, KEYS.messagesPattern(), async (keys) => {
-      const pipeline = redisClient.pipeline();
-      keys.forEach((k) => pipeline.del(k));
-      await pipeline.exec();
-    });
+    await redisClient.flushdb();
 
     await redisClient.set(KEYS.systemCurrentMonth(), currentMonth);
 
-    const systemMessage = createSystemMessage('<strong>メンテナンスのためデータベースがリセットされました</strong>');
+    const systemMessage = createSystemMessage(
+      '<strong>メンテナンスのためデータベースがリセットされました</strong>'
+    );
 
-    for (const roomId of roomIds) {
-      ioInstance.to(roomId).emit('newMessage', {
-        username: systemMessage.username,
-        message: systemMessage.message,
-        time: systemMessage.time,
-        seed: systemMessage.seed,
-      });
-    }
+    ioInstance.emit('newMessage', {
+      username: systemMessage.username,
+      message: systemMessage.message,
+      time: systemMessage.time,
+      seed: systemMessage.seed,
+    });
 
-    console.log('[Redis] messages:* deletion completed');
+    console.log('[Redis] FLUSHDB completed');
   } catch (err) {
     console.error('[Redis] Monthly reset failed', err);
   }
@@ -262,7 +243,7 @@ const requireSocketSession = createRequireSocketSession();
 // -------------------- API --------------------
 async function getMessagesHandler(req, res) {
   const roomId = req.params.roomId;
-  if (!ROOM_ID_PATTERN.test(roomId)) return res.sendStatus(400);
+  if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return res.sendStatus(400);
 
   const rawMessages = await redisClient.lrange(KEYS.messages(roomId), 0, -1);
   const messages = rawMessages.map((m) => {
@@ -282,7 +263,7 @@ app.get('/api/messages/:roomId', requireSocketSession, asyncHandler(getMessagesH
 async function postMessageHandler(req, res) {
   const { message, seed, roomId } = req.body;
   if (!roomId || !message || !seed) return res.sendStatus(400);
-  if (!ROOM_ID_PATTERN.test(roomId)) return res.sendStatus(400);
+  if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return res.sendStatus(400);
   if (message.length === 0 || message.length > 800) return res.sendStatus(400);
 
   const clientId = req.clientId;
@@ -291,7 +272,6 @@ async function postMessageHandler(req, res) {
   const username = await redisClient.get(KEYS.username(clientId));
   if (!username) return res.status(400).json({ error: 'Username not set' });
 
-  // spamService.check encapsulates mute/isMuted/rate/interval logic
   const spamResult = await spamService.check(clientId);
   if (spamResult.muted) {
     emitUserToast(io, clientId, spamResult.muteSec ? `スパムを検知したため${spamResult.muteSec}秒間ミュートされました` : '送信が制限されています');
@@ -306,7 +286,6 @@ async function postMessageHandler(req, res) {
     seed,
   };
 
-  // push + trim via helper (atomic LUA inside helper)
   await pushAndTrimList(redisClient, KEYS.messages(roomId), JSON.stringify(storedMessage), 100);
 
   io.to(roomId).emit('newMessage', storedMessage);
@@ -338,8 +317,7 @@ async function setUsernameHandler(req, res) {
 
   if (current === sanitized) return res.json({ ok: true });
 
-  // rate-limit username change (use ms-based helper)
-  const rateKey = `ratelimit:username:${clientId}`; // optional: move into KEYS if desired
+  const rateKey = `ratelimit:username:${clientId}`;
   if (!(await checkRateLimitMs(redisClient, rateKey, 30000))) {
     emitUserToast(io, clientId, 'ユーザー名の変更は30秒以上間隔をあけてください');
     return res.sendStatus(429);
@@ -363,7 +341,6 @@ app.post('/api/username', requireSocketSession, asyncHandler(setUsernameHandler)
 async function authHandler(req, res) {
   const ip = req.ip;
   const rateKey = `ratelimit:auth:ip:${ip}`;
-  // simple IP counter
   const allowed = await (async () => {
     const count = await redisClient.incr(rateKey);
     if (count === 1) await redisClient.expire(rateKey, 60 * 60);
@@ -399,13 +376,12 @@ async function clearMessagesHandler(req, res) {
     return res.sendStatus(403);
   }
 
-  // rate-limit admin clears (ms-based)
   if (!(await checkRateLimitMs(redisClient, `ratelimit:clear:${clientId}`, 30000))) {
     emitUserToast(io, clientId, '削除操作は30秒以上間隔をあけてください');
     return res.sendStatus(429);
   }
 
-  if (!roomId || !ROOM_ID_PATTERN.test(roomId)) return res.sendStatus(400);
+  if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return res.sendStatus(400);
 
   await redisClient.del(KEYS.messages(roomId));
   io.to(roomId).emit('clearMessages');
@@ -443,7 +419,7 @@ io.use(async (socket, next) => {
 });
 
 io.on('connection', (socket) => {
-  const wrap = wrapperFactory(socket); // wrapperFactory returns (socket) => (fn) => wrappedHandler
+  const wrap = wrapperFactory(socket);
 
   socket.on('joinRoom', wrap(async (socket, data = {}) => {
     const { roomId } = data;
@@ -451,7 +427,7 @@ io.on('connection', (socket) => {
       safeEmitSocket(socket, 'authRequired', {});
       return;
     }
-    if (!roomId || !ROOM_ID_PATTERN.test(roomId)) {
+    if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) {
       await safeLogAction({ user: socket.data.clientId, action: 'joinRoomFailed', extra: { roomId } });
       return;
     }
