@@ -1,95 +1,124 @@
-const KEYS = require('../lib/redisKeys');
+module.exports = function createSpamService(redis, logger, KEYS, config = {}) {
+  const BASE_MUTE_SEC = config.baseMuteSec || 30;
+  const MAX_MUTE_SEC = config.maxMuteSec || 60 * 10;
+  const SPAM_CHECK_WINDOW = config.spamWindowSec || 60; // seconds
+  const REPEAT_LIMIT = config.repeatLimit || 3;
+  const MESSAGE_RATE_LIMIT_MS = config.messageRateLimitMs || 1000;
 
-const BASE_MUTE_SEC = 30;
-const MAX_MUTE_SEC = 600;
-const SPAM_CHECK_WINDOW_SEC = 60;
-const REPEAT_LIMIT = 3;
-
-function calcMuteSeconds(level) {
-  return Math.min(BASE_MUTE_SEC * 2 ** level, MAX_MUTE_SEC);
-}
-
-async function safeLog(logger, payload) {
-  try {
-    await logger(payload);
-  } catch (e) {
-    console.error('spamService logger failed', e);
+  function calcMuteSeconds(level) {
+    return Math.min(BASE_MUTE_SEC * 2 ** level, MAX_MUTE_SEC);
   }
-}
 
-module.exports = function createSpamService(redis, logger) {
   async function isMuted(clientId) {
-    return redis.exists(KEYS.mute(clientId));
+    try {
+      const exists = await redis.exists(KEYS.mute(clientId));
+      return !!exists;
+    } catch (e) {
+      // On error, be conservative: do not treat as muted (so we don't block unnecessarily)
+      return false;
+    }
   }
 
+  // rate check (ms window) - atomic-ish using GET/SET PX pattern
   async function checkRate(clientId) {
-    const key = KEYS.rate(clientId);
+    const key = KEYS.rateMsg(clientId);
     const now = Date.now();
-    const last = await redis.get(key);
-
-    if (last && now - Number(last) < 1000) return false;
-    await redis.set(key, now, 'PX', 1000);
-    return true;
+    try {
+      const last = await redis.get(key);
+      if (last && now - Number(last) < MESSAGE_RATE_LIMIT_MS) {
+        return false;
+      }
+      // set new last timestamp in ms with PX
+      await redis.set(key, String(now), 'PX', MESSAGE_RATE_LIMIT_MS);
+      return true;
+    } catch (err) {
+      // on redis error, allow sending (fail-open)
+      return true;
+    }
   }
 
+  // interval / repeat spam detection
   async function checkIntervalSpam(clientId) {
-    const now = Date.now();
-
     const lastTimeKey = KEYS.spamLastTime(clientId);
     const lastIntervalKey = KEYS.spamLastInterval(clientId);
-    const countKey = KEYS.spamIntervalCount(clientId);
-    const levelKey = KEYS.muteLevel(clientId);
+    const repeatCountKey = KEYS.spamRepeatCount(clientId);
+    const muteLevelKey = KEYS.muteLevel(clientId);
+    const muteKey = KEYS.mute(clientId);
 
-    const lastTime = Number(await redis.get(lastTimeKey)) || 0;
-    const lastInterval = Number(await redis.get(lastIntervalKey)) || 0;
+    try {
+      const now = Date.now();
+      const lastTimeRaw = await redis.get(lastTimeKey);
+      const lastIntervalRaw = await redis.get(lastIntervalKey);
+      const repeatRaw = await redis.get(repeatCountKey);
 
-    const interval = lastTime ? now - lastTime : 0;
-    let count = Number(await redis.get(countKey)) || 0;
+      const lastTime = Number(lastTimeRaw) || 0;
+      const lastInterval = Number(lastIntervalRaw) || 0;
+      let intervalCount = Number(repeatRaw) || 0;
 
-    if (lastTime && Math.abs(interval - lastInterval) < 300) {
-      count++;
-    } else {
-      count = 1;
+      const interval = lastTime ? now - lastTime : 0;
+
+      if (lastTime && Math.abs(interval - lastInterval) < 300) {
+        intervalCount++;
+      } else {
+        intervalCount = 1;
+      }
+
+      // store new values with EX = SPAM_CHECK_WINDOW
+      const pipeline = redis.pipeline();
+      pipeline.set(lastTimeKey, String(now), 'EX', SPAM_CHECK_WINDOW);
+      pipeline.set(lastIntervalKey, String(interval), 'EX', SPAM_CHECK_WINDOW);
+      pipeline.set(repeatCountKey, String(intervalCount), 'EX', SPAM_CHECK_WINDOW);
+      await pipeline.exec();
+
+      if (intervalCount >= REPEAT_LIMIT) {
+        // escalate mute level and apply mute
+        const currentLevelRaw = await redis.get(muteLevelKey);
+        const currentLevel = Number(currentLevelRaw) || 0;
+        const muteSec = calcMuteSeconds(currentLevel);
+
+        // set mute and increase level (keep level for 10 minutes)
+        const pl = redis.pipeline();
+        pl.set(muteKey, '1', 'EX', muteSec);
+        pl.set(muteLevelKey, String(currentLevel + 1), 'EX', 10 * 60);
+        // last_mute optional
+        pl.set(KEYS.spamLastTime(clientId) + ':last_mute', String(Date.now()), 'EX', 10 * 60).catch(() => {});
+        await pl.exec().catch(() => { /* ignore pipeline error */ });
+
+        return muteSec;
+      }
+
+      return 0;
+    } catch (err) {
+      // on error, do not mute (fail-open)
+      return 0;
     }
-
-    const pipeline = redis.pipeline();
-    pipeline.set(lastTimeKey, now, 'EX', SPAM_CHECK_WINDOW_SEC);
-    pipeline.set(lastIntervalKey, interval, 'EX', SPAM_CHECK_WINDOW_SEC);
-    pipeline.set(countKey, count, 'EX', SPAM_CHECK_WINDOW_SEC);
-    await pipeline.exec();
-
-    if (count < REPEAT_LIMIT) return 0;
-
-    const level = Number(await redis.get(levelKey)) || 0;
-    const muteSec = calcMuteSeconds(level);
-
-    await redis.set(KEYS.mute(clientId), '1', 'EX', muteSec);
-    await redis.set(levelKey, level + 1, 'EX', 600);
-
-    return muteSec;
   }
 
-  async function handleMessage(clientId) {
-    if (await isMuted(clientId)) {
-      return { muted: true, reason: 'muted', muteSec: 0 };
+  async function check(clientId) {
+    if (!clientId) return { muted: false, reason: null, muteSec: 0 };
+
+    try {
+      const m = await isMuted(clientId);
+      if (m) return { muted: true, reason: 'already-muted', muteSec: 0 };
+    } catch (e) {
+      // swallow
     }
 
-    if (!(await checkRate(clientId))) {
-      return { muted: true, reason: 'rate', muteSec: 0 };
-    }
+    const okRate = await checkRate(clientId);
+    if (!okRate) return { muted: true, reason: 'rate', muteSec: 0 };
 
     const muteSec = await checkIntervalSpam(clientId);
     if (muteSec > 0) {
-      await safeLog(logger, {
-        user: clientId,
-        action: 'spamMuted',
-        extra: { muteSec },
-      });
-      return { muted: true, reason: 'spam', muteSec };
+      try {
+        await logger({ user: clientId, action: 'spamMuted', extra: { muteSec } });
+      } catch (e) {
+        // logger should be safe but swallow errors here
+      }
+      return { muted: true, reason: 'pattern', muteSec };
     }
 
     return { muted: false, reason: null, muteSec: 0 };
   }
 
-  return { handleMessage };
+  return { check, isMuted };
 };
