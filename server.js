@@ -42,7 +42,7 @@ redisClient.on('connect', () => console.log('Redis connected'));
 redisClient.on('error', (err) => console.error('Redis error', err));
 
 // -------------------- 設定値 --------------------
-const MESSAGE_RATE_LIMIT_MS = 1000; // ms
+const MESSAGE_RATE_LIMIT_MS = 1200; // ms
 
 // -------------------- ユーティリティ関数 --------------------
 function escapeHTML(str = '') {
