@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
 
-  let socket = null; // 後で初期化
+  let socket = null;
 
   /* ---------- 状態 ---------- */
   let messages = [];
@@ -223,24 +223,33 @@ document.addEventListener('DOMContentLoaded', () => {
       throw new Error('username required');
     }
 
-    const res = await fetch(`${SERVER_URL}/api/auth`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: myName })
-    });
+    try {
+      const res = await fetch(`${SERVER_URL}/api/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: myName })
+      });
 
-    if (!res.ok) {
-      throw new Error('failed to obtain token');
-    }
+      if (res.status === 429) {
+        showToast('認証は一時的に制限されています。時間をおいてお試しください。');
+        throw new Error('rate_limited');
+      }
 
-    const data = await res.json();
-    if (data?.token) {
-      myToken = data.token;
-      localStorage.setItem('chatToken', myToken);
-      console.log('[Auth] token obtained');
-      return myToken;
+      if (!res.ok) {
+        throw new Error('failed to obtain token');
+      }
+
+      const data = await res.json();
+      if (data?.token) {
+        myToken = data.token;
+        localStorage.setItem('chatToken', myToken);
+        console.log('[Auth] token obtained');
+        return myToken;
+      }
+      throw new Error('invalid auth response');
+    } catch (err) {
+      throw err;
     }
-    throw new Error('invalid auth response');
   }
 
   async function fetchWithAuth(url, opts = {}, retry = true) {
@@ -311,7 +320,11 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
           await obtainToken();
         } catch (e) {
-          showToast('認証に失敗しました');
+          if (e.message === 'rate_limited') {
+            showToast('認証が制限されています。あとでお試しください。');
+          } else {
+            showToast('認証に失敗しました');
+          }
           isSending = false;
           button.disabled = false;
           button.textContent = '送信';
@@ -326,7 +339,11 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       if (!res || !res.ok) {
-        showToast('送信できませんでした');
+        if (res && res.status === 429) {
+          showToast('送信が制限されています');
+        } else {
+          showToast('送信できませんでした');
+        }
         return;
       }
 
@@ -402,13 +419,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      await fetchWithAuth(`${SERVER_URL}/api/clear`, {
+      const res = await fetchWithAuth(`${SERVER_URL}/api/clear`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password, roomId })
       });
+      if (res && !res.ok) {
+        if (res.status === 403) showToast('管理者認証に失敗しました');
+        else showToast('削除に失敗しました');
+      }
     } catch (e) {
       console.error(e);
+      showToast('通信エラーが発生しました');
     }
   }
 
@@ -478,7 +500,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    socket = io(SERVER_URL, { auth: { token: myToken || '' }, transports: ['websocket'] });
+    socket = io(SERVER_URL, {
+      auth: { token: myToken || '' }
+    });
 
     socket.on('connect', () => {
       setConnectionState('online');
@@ -527,6 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (/Authentication|Invalid token|Authentication required/i.test(msg)) {
         myToken = null;
         localStorage.removeItem('chatToken');
+
         try {
           await obtainToken();
           if (socket) {
@@ -537,14 +562,30 @@ document.addEventListener('DOMContentLoaded', () => {
             createSocket();
           }
         } catch (e) {
-          openProfileModal();
+          if (e && e.message === 'rate_limited') {
+            showToast('認証が制限されています。しばらく待ってください。');
+          } else {
+            openProfileModal();
+          }
         }
       }
     });
   }
 
   async function startConnection() {
-    if (!myToken) await obtainToken();
+    if (!myToken) {
+      try {
+        await obtainToken();
+      } catch (e) {
+        if (e && e.message === 'rate_limited') {
+          showToast('認証が制限されています。しばらく待ってください。');
+          return;
+        }
+        openProfileModal();
+        return;
+      }
+    }
+
     if (!socket) createSocket();
     else if (!socket.connected) {
       socket.auth = { token: myToken || '' };
