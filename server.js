@@ -235,7 +235,7 @@ async function getMessagesHandler(req, res) {
 
   res.json(messages.map(({ username, message, time, seed }) => ({ username, message, time, seed })));
 }
-app.get('/^[a-zA-Z0-9_-]{1,32}$//:roomId', requireSocketSession, asyncHandler(getMessagesHandler));
+app.get('/api/messages/:roomId([a-zA-Z0-9_-]{1,32})', requireSocketSession, asyncHandler(getMessagesHandler));
 
 async function postMessageHandler(req, res) {
   const { message, seed, roomId } = req.body;
