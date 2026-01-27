@@ -500,8 +500,13 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    if (!myToken) {
+      console.warn('[socket] no token, skip connect');
+      return;
+    }
+    
     socket = io(SERVER_URL, {
-      auth: { token: myToken || '' }
+      auth: { token: myToken }
     });
 
     socket.on('connect', () => {
@@ -573,22 +578,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function startConnection() {
+    if (!myToken) await obtainToken();
+    if (!socket) createSocket();
     if (!myToken) {
-      try {
-        await obtainToken();
-      } catch (e) {
-        if (e && e.message === 'rate_limited') {
-          showToast('認証が制限されています。しばらく待ってください。');
-          return;
-        }
-        openProfileModal();
-        return;
-      }
+      await obtainToken();
     }
 
-    if (!socket) createSocket();
-    else if (!socket.connected) {
-      socket.auth = { token: myToken || '' };
+    if (!socket) {
+      createSocket();
+    } else if (!socket.connected) {
+      socket.auth = { token: myToken };
       socket.connect();
     }
   }
