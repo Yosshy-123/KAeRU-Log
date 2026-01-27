@@ -425,7 +425,8 @@ io.use(async (socket, next) => {
 
     socket.data.clientId = clientId;
     socket.data.authenticated = true;
-    socket.join(KEYS.userRoom(clientId));
+    const userRoom = KEYS.userRoom(clientId);
+    socket.join(userRoom);
     next();
   } catch (err) {
     next(new Error('Authentication error'));
