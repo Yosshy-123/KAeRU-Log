@@ -6,6 +6,12 @@ const http = require('http');
 const { Server: SocketIOServer } = require('socket.io');
 const crypto = require('crypto');
 const Redis = require('ioredis');
+const KEYS = require('./lib/redisKeys');
+const { pushAndTrimList, processKeysByPattern } = require('./lib/redisHelpers');
+const createSpamService = require('./services/spamService');
+const { getOrResetByTTLSec, checkRateLimitMs, checkCountLimitSec } = require('./utils/redisUtils');
+const logAction = require('./utils/logger');
+const createWrapperFactory = require('./utils/socketWrapper');
 const cron = require('node-cron');
 const cors = require('cors');
 
