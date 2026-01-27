@@ -6,15 +6,16 @@ const http = require('http');
 const { Server: SocketIOServer } = require('socket.io');
 const crypto = require('crypto');
 const Redis = require('ioredis');
-
-const KEYS = require('./lib/redisKeys');
-const { pushAndTrimList, processKeysByPattern } = require('./lib/redisHelpers');
-const createSpamService = require('./services/spamService');
-const { checkRateLimitMs } = require('./utils/redisUtils');
-const rawLogAction = require('./utils/logger');
-const createWrapperFactory = require('./utils/socketWrapper');
 const cron = require('node-cron');
 const cors = require('cors');
+
+const KEYS = require('./lib/redisKeys');
+const { pushAndTrimList } = require('./lib/redisHelpers');
+const createSpamService = require('./services/spamService');
+const { checkRateLimitMs } = require('./utils/redisUtils');
+const tokenBucket = require('./utils/tokenBucket');
+const rawLogAction = require('./utils/logger');
+const createWrapperFactory = require('./utils/socketWrapper');
 
 // -------------------- 環境変数 --------------------
 const PORT = process.env.PORT || 3000;
@@ -41,7 +42,7 @@ redisClient.on('connect', () => console.log('Redis connected'));
 redisClient.on('error', (err) => console.error('Redis error', err));
 
 // -------------------- 設定値 --------------------
-const MESSAGE_RATE_LIMIT_MS = 1000;
+const MESSAGE_RATE_LIMIT_MS = 1000; // ms
 
 // -------------------- ユーティリティ関数 --------------------
 function escapeHTML(str = '') {
@@ -107,9 +108,9 @@ function safeEmitSocket(socket, event, payload) {
 }
 
 function emitUserToast(ioInstance, clientId, message) {
-  const room = ioInstance.sockets.adapter.rooms.get(`__user:${clientId}`);
+  const room = ioInstance.sockets.adapter.rooms.get(KEYS.userRoom(clientId));
   if (!room || room.size === 0) return;
-  ioInstance.to(`__user:${clientId}`).emit('toast', {
+  ioInstance.to(KEYS.userRoom(clientId)).emit('toast', {
     scope: 'user',
     message,
     time: Date.now(),
@@ -118,8 +119,10 @@ function emitUserToast(ioInstance, clientId, message) {
 
 function emitRoomToast(ioInstance, roomId, message) {
   if (!roomId) return;
+
   const room = ioInstance.sockets.adapter.rooms.get(roomId);
   if (!room || room.size === 0) return;
+
   ioInstance.to(roomId).emit('toast', {
     scope: 'room',
     message,
@@ -163,7 +166,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.set('trust proxy', true);
+app.set('trust proxy', true); // Render 用
 
 const httpServer = http.createServer(app);
 const io = new SocketIOServer(httpServer, {
@@ -272,7 +275,7 @@ async function postMessageHandler(req, res) {
   const username = await redisClient.get(KEYS.username(clientId));
   if (!username) return res.status(400).json({ error: 'Username not set' });
 
-  const spamResult = await spamService.check(clientId);
+  const spamResult = await spamService.handleMessage(clientId);
   if (spamResult.muted) {
     emitUserToast(io, clientId, spamResult.muteSec ? `スパムを検知したため${spamResult.muteSec}秒間ミュートされました` : '送信が制限されています');
     await safeLogAction({ user: clientId, action: 'sendMessageBlocked', extra: { reason: spamResult.reason || 'spam' } });
@@ -317,7 +320,7 @@ async function setUsernameHandler(req, res) {
 
   if (current === sanitized) return res.json({ ok: true });
 
-  const rateKey = `ratelimit:username:${clientId}`;
+  const rateKey = KEYS.rateUsername(clientId);
   if (!(await checkRateLimitMs(redisClient, rateKey, 30000))) {
     emitUserToast(io, clientId, 'ユーザー名の変更は30秒以上間隔をあけてください');
     return res.sendStatus(429);
@@ -340,13 +343,24 @@ app.post('/api/username', requireSocketSession, asyncHandler(setUsernameHandler)
 // -------------------- Auth API --------------------
 async function authHandler(req, res) {
   const ip = req.ip;
-  const rateKey = `ratelimit:auth:ip:${ip}`;
-  const allowed = await (async () => {
-    const count = await redisClient.incr(rateKey);
-    if (count === 1) await redisClient.expire(rateKey, 60 * 60);
-    return count <= 5;
-  })();
-  if (!allowed) return res.sendStatus(429);
+
+  const allowed = await tokenBucket(
+    redisClient,
+    KEYS.tokenBucketAuthIp(ip),
+    {
+      capacity: 5,            // 最大 5 トークン
+      refillPerSec: 5 / 3600, // 1時間で5回補充 (seconds)
+    }
+  );
+
+  if (!allowed) {
+    await safeLogAction({
+      user: null,
+      action: 'authRateLimited',
+      extra: { ip },
+    });
+    return res.sendStatus(429);
+  }
 
   const { username } = req.body;
   if (!username || typeof username !== 'string' || username.length > 24) {
@@ -376,7 +390,7 @@ async function clearMessagesHandler(req, res) {
     return res.sendStatus(403);
   }
 
-  if (!(await checkRateLimitMs(redisClient, `ratelimit:clear:${clientId}`, 30000))) {
+  if (!(await checkRateLimitMs(redisClient, KEYS.rateClear(clientId), 30000))) {
     emitUserToast(io, clientId, '削除操作は30秒以上間隔をあけてください');
     return res.sendStatus(429);
   }
@@ -411,7 +425,7 @@ io.use(async (socket, next) => {
 
     socket.data.clientId = clientId;
     socket.data.authenticated = true;
-    socket.join(`__user:${clientId}`);
+    socket.join(KEYS.userRoom(clientId));
     next();
   } catch (err) {
     next(new Error('Authentication error'));
@@ -424,7 +438,9 @@ io.on('connection', (socket) => {
   socket.on('joinRoom', wrap(async (socket, data = {}) => {
     const { roomId } = data;
     if (!socket.data?.authenticated || !socket.data?.clientId) {
-      safeEmitSocket(socket, 'authRequired', {});
+      if (!safeEmitSocket(socket, 'authRequired', {})) {
+        await safeLogAction({ user: null, action: 'emitFailed', extra: { event: 'authRequired' } });
+      }
       return;
     }
     if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) {
