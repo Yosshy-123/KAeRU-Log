@@ -342,30 +342,37 @@ app.post('/api/username', requireSocketSession, asyncHandler(setUsernameHandler)
 async function authHandler(req, res) {
   const ip = req.ip;
 
-  // token bucket を利用（実装は ./utils/tokenBucket）
+  // token bucket レート制限（1時間に5回）
   const allowed = await tokenBucket(redisClient, KEYS.tokenBucketAuthIp(ip), {
     capacity: 5,
-    refillPerSec: 5 / 3600, // 1時間で5回分
+    refillPerSec: 5 / 3600,
   });
-
   if (!allowed) {
     await safeLogAction({ user: null, action: 'authRateLimited', extra: { ip } });
     return res.sendStatus(429);
   }
 
-  const { username } = req.body;
-  if (!username || typeof username !== 'string' || username.length > 24) {
+  let { username } = req.body;
+
+  // username が未入力なら仮名を生成
+  if (!username || typeof username !== 'string' || username.trim().length === 0) {
+    username = 'guest-' + crypto.randomBytes(3).toString('hex'); // 例: guest-1a2b3c
+  }
+
+  if (username.length > 24) {
     return res.status(400).json({ error: 'Invalid username' });
   }
 
   const clientId = crypto.randomUUID();
   const token = createAuthToken();
 
+  // トークンとユーザー名を Redis に保存（有効期限 1日）
   await redisClient.set(KEYS.token(token), clientId, 'EX', 60 * 60 * 24);
   await redisClient.set(KEYS.username(clientId), escapeHTML(username), 'EX', 60 * 60 * 24);
 
-  await safeLogAction({ user: clientId, action: 'issueToken' });
-  res.json({ token, clientId });
+  await safeLogAction({ user: clientId, action: 'issueToken', extra: { username } });
+
+  res.json({ token, clientId, username });
 }
 app.post('/api/auth', asyncHandler(authHandler));
 
