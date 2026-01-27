@@ -74,7 +74,11 @@ document.addEventListener('DOMContentLoaded', () => {
   function generateUserSeed(length) {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     const array = new Uint32Array(length);
-    crypto.getRandomValues(array);
+    if (window.crypto && crypto.getRandomValues) {
+      crypto.getRandomValues(array);
+    } else {
+      for (let i = 0; i < length; i++) array[i] = Math.floor(Math.random() * 2 ** 32);
+    }
     let result = '';
     for (let i = 0; i < length; i++) {
       result += chars[array[i] % chars.length];
@@ -224,6 +228,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
+      console.debug('[Auth] requesting token for', myName);
       const res = await fetch(`${SERVER_URL}/api/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -236,6 +241,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       if (!res.ok) {
+        const body = await safeReadBody(res);
+        console.warn('[Auth] failed', res.status, body);
         throw new Error('failed to obtain token');
       }
 
@@ -248,7 +255,17 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       throw new Error('invalid auth response');
     } catch (err) {
+      console.error('[Auth] error', err);
       throw err;
+    }
+  }
+
+  async function safeReadBody(res) {
+    try {
+      const txt = await res.text();
+      try { return JSON.parse(txt); } catch { return txt; }
+    } catch (e) {
+      return `<no body: ${e.message}>`;
     }
   }
 
@@ -256,8 +273,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!opts.headers) opts.headers = {};
     if (myToken) opts.headers['Authorization'] = `Bearer ${myToken}`;
 
-    const res = await fetch(url, opts);
+    let res;
+    try {
+      res = await fetch(url, opts);
+    } catch (e) {
+      console.error('[fetchWithAuth] network error', e);
+      throw e;
+    }
+
     if ((res.status === 401 || res.status === 403) && retry) {
+      console.info('[fetchWithAuth] auth failed (401/403), attempting token refresh');
       try {
         myToken = null;
         localStorage.removeItem('chatToken');
@@ -278,7 +303,10 @@ document.addEventListener('DOMContentLoaded', () => {
         cache: 'no-store'
       });
 
-      if (!res || !res.ok) throw 0;
+      if (!res || !res.ok) {
+        console.warn('[loadHistory] failed', res && res.status);
+        return;
+      }
       messages = await res.json();
 
       if (elements.messageList) {
@@ -334,13 +362,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const res = await fetchWithAuth(`${SERVER_URL}/api/messages`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${myToken}` },
         body: JSON.stringify(payload)
       });
 
       if (!res || !res.ok) {
+        const body = await safeReadBody(res);
+        console.warn('[sendMessage] failed', res && res.status, body);
+
         if (res && res.status === 429) {
           showToast('送信が制限されています');
+        } else if (res && (res.status === 401 || res.status === 403)) {
+          myToken = null;
+          localStorage.removeItem('chatToken');
+          showToast('認証エラー。プロフィールを再設定してください');
+          openProfileModal();
         } else {
           showToast('送信できませんでした');
         }
@@ -352,7 +388,7 @@ document.addEventListener('DOMContentLoaded', () => {
         focusInput();
       }
     } catch (e) {
-      console.error(e);
+      console.error('[sendMessage] error', e);
       showToast('通信エラーが発生しました');
     } finally {
       if (pendingMessage && !overridePayload) pendingMessage = null;
@@ -421,7 +457,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const res = await fetchWithAuth(`${SERVER_URL}/api/clear`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${myToken}` },
         body: JSON.stringify({ password, roomId })
       });
       if (res && !res.ok) {
@@ -445,7 +481,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const res = await fetchWithAuth(`${SERVER_URL}/api/username`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${myToken}` },
         body: JSON.stringify({ username: v })
       });
 
@@ -460,7 +496,12 @@ document.addEventListener('DOMContentLoaded', () => {
       showToast('プロフィールを保存しました');
       focusInput();
 
-      if (!socket || !socket.connected) startConnection().catch(err => console.warn('startConnection failed', err));
+      try {
+        await startConnection();
+      } catch (e) {
+        console.warn('startConnection failed', e);
+      }
+
       if (pendingMessage) {
         const pm = pendingMessage;
         pendingMessage = null;
@@ -492,7 +533,11 @@ document.addEventListener('DOMContentLoaded', () => {
   /* ---------- Socket.IO ---------- */
   function joinRoom() {
     if (!socket) return;
-    socket.emit('joinRoom', { roomId });
+    try {
+      socket.emit('joinRoom', { roomId });
+    } catch (e) {
+      console.warn('[joinRoom] emit failed', e);
+    }
   }
 
   function createSocket() {
@@ -504,17 +549,25 @@ document.addEventListener('DOMContentLoaded', () => {
       console.warn('[socket] no token, skip connect');
       return;
     }
-    
+
     socket = io(SERVER_URL, {
-      auth: { token: myToken }
+      auth: { token: myToken },
+    });
+
+    socket.onAny((event, ...args) => {
+      console.debug('[socket event]', event, args);
     });
 
     socket.on('connect', () => {
+      console.info('[socket] connected', socket.id);
       setConnectionState('online');
       joinRoom();
     });
 
-    socket.on('disconnect', () => setConnectionState('offline'));
+    socket.on('disconnect', (reason) => {
+      console.info('[socket] disconnected', reason);
+      setConnectionState('offline');
+    });
 
     socket.io.on('reconnect_attempt', () => {
       if (socket) socket.auth = { token: myToken || '' };
@@ -551,9 +604,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('connect_error', async (err) => {
-      console.warn('connect_error', err);
+      console.warn('connect_error', err && err.message, err);
       const msg = String((err && err.message) || '');
       if (/Authentication|Invalid token|Authentication required/i.test(msg)) {
+        console.info('[socket] authentication error — clearing stored token and retrying once');
         myToken = null;
         localStorage.removeItem('chatToken');
 
@@ -573,13 +627,18 @@ document.addEventListener('DOMContentLoaded', () => {
             openProfileModal();
           }
         }
+      } else {
+        console.warn('[socket] connect_error (non-auth)', err);
       }
     });
   }
 
   async function startConnection() {
-    if (!myToken) await obtainToken();
-    if (!socket) createSocket();
+    if (!myName) {
+      openProfileModal();
+      throw new Error('username required');
+    }
+
     if (!myToken) {
       await obtainToken();
     }
@@ -636,11 +695,11 @@ document.addEventListener('DOMContentLoaded', () => {
   (async () => {
     try {
       if (myToken) {
-        startConnection().catch(() => {});
+        try { await startConnection(); } catch (e) { console.warn('startConnection initial failed', e); }
       } else if (myName) {
         try {
           await obtainToken();
-          startConnection().catch(() => {});
+          try { await startConnection(); } catch (e) { console.warn('startConnection after obtainToken failed', e); }
         } catch (e) {
           openProfileModal();
         }
