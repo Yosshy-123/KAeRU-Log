@@ -1,24 +1,40 @@
-const KEYS = require('../lib/redisKeys');
+module.exports = async function rawLogAction(redisClient, { user, action, extra = {} } = {}) {
+  if (!action) throw new Error("rawLogAction: 'action' must be specified");
 
-/**
- * 非同期に username を取得するが、100ms タイムアウトを設けて
- * ログが Redis の遅延で固まらないようにする。
- */
-function fetchUsernameWithTimeout(redisClient, clientId, timeoutMs = 100) {
-  if (!clientId) return Promise.resolve('-');
-  const p = redisClient.get(KEYS.username(clientId)).catch(() => null);
-  const t = new Promise((res) => setTimeout(() => res(null), timeoutMs));
-  return Promise.race([p, t]).then((v) => v || '-');
-}
+  // timestamp in JST for readability
+  const now = new Date();
+  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const time = jst.toISOString().replace('T', ' ').slice(0, 19);
 
-async function logAction(redisClient, { user, action, extra = {} } = {}) {
-  if (!action) throw new Error("logAction: 'action' must be specified");
-  const time = new Date().toISOString();
   const clientId = user ?? '-';
-  const username = await fetchUsernameWithTimeout(redisClient, clientId).catch(() => '-');
-  const extraStr = extra && Object.keys(extra).length ? ` ${JSON.stringify(extra)}` : '';
-  // console.log は同期的だが、username 取得は最大 timeoutMs
-  console.log(`[${time}] [User:${clientId}] [Username:${username}] Action: ${action}${extraStr}`);
-}
 
-module.exports = logAction;
+  // try to fetch username with a small timeout to avoid blocking
+  async function fetchUsername(timeoutMs = 100) {
+    if (!user) return '-';
+    try {
+      const getPromise = redisClient.get(`username:${user}`);
+      const timeout = new Promise((res) => setTimeout(() => res(null), timeoutMs));
+      const val = await Promise.race([getPromise, timeout]);
+      return val || '-';
+    } catch (err) {
+      return '-';
+    }
+  }
+
+  let username = '-';
+  try {
+    username = await fetchUsername(100);
+  } catch (e) {
+    username = '-';
+  }
+
+  const extraStr = extra && Object.keys(extra).length ? ` ${JSON.stringify(extra)}` : '';
+
+  // console.log used for simplicity; replace with proper logger if available
+  try {
+    console.log(`[${time}] [User:${clientId}] [Username:${username}] Action: ${action}${extraStr}`);
+  } catch (e) {
+    // don't throw from logger
+    try { console.error('Logger output failed', e); } catch {}
+  }
+};
