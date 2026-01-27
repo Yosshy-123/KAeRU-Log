@@ -6,11 +6,12 @@ const http = require('http');
 const { Server: SocketIOServer } = require('socket.io');
 const crypto = require('crypto');
 const Redis = require('ioredis');
-const KEYS = require('./lib/redisKeys');
+
+const KEYS = require('./lib/redisKeys'); // see preconditions above
 const { pushAndTrimList, processKeysByPattern } = require('./lib/redisHelpers');
 const createSpamService = require('./services/spamService');
-const { getOrResetByTTLSec, checkRateLimitMs, checkCountLimitSec } = require('./utils/redisUtils');
-const logAction = require('./utils/logger');
+const { checkRateLimitMs } = require('./utils/redisUtils'); // we use ms-based rate helper
+const rawLogAction = require('./utils/logger'); // expects signature: async (redisClient, {user,action,extra})
 const createWrapperFactory = require('./utils/socketWrapper');
 const cron = require('node-cron');
 const cors = require('cors');
@@ -40,14 +41,10 @@ redisClient.on('connect', () => console.log('Redis connected'));
 redisClient.on('error', (err) => console.error('Redis error', err));
 
 // -------------------- 設定値 --------------------
-const BASE_MUTE_SEC = 30;
-const MAX_MUTE_SEC = 60 * 10; // 10 minutes
-const SPAM_CHECK_WINDOW = 60; // 連続送信カウント用 TTL
 const MESSAGE_RATE_LIMIT_MS = 1000;
-const REPEAT_LIMIT = 3;
 const ROOM_ID_PATTERN = /^[a-zA-Z0-9_-]{1,32}$/;
 
-// -------------------- ヘルパー関数 --------------------
+// -------------------- ユーティリティ関数 --------------------
 function escapeHTML(str = '') {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -89,143 +86,30 @@ function createSystemMessage(htmlMessage) {
   };
 }
 
-// -------------------- 汎用ログ --------------------
-async function logAction({ user, action, extra = {} } = {}) {
-  if (!action) throw new Error("logAction: 'action' must be specified");
-
-  const time = formatJST(new Date(), true);
-  const clientId = user ?? '-';
-
-  let username = '-';
-  if (user) {
-    try {
-      username = (await redisClient.get(`username:${user}`)) || '-';
-    } catch {
-      username = '-';
-    }
+// -------------------- ログラッパー（失敗耐性） --------------------
+async function safeLogAction(payload) {
+  try {
+    // rawLogAction is assumed to accept (redisClient, payload)
+    await rawLogAction(redisClient, payload);
+  } catch (err) {
+    // never throw from logging
+    console.error('[safeLogAction] log failed', err);
   }
-
-  const extraStr =
-    extra && Object.keys(extra).length > 0
-      ? ` ${JSON.stringify(extra)}`
-      : '';
-
-  console.log(
-    `[${time}] [User:${clientId}] [Username:${username}] Action: ${action}${extraStr}`
-  );
 }
 
-// -------------------- Redis SCAN helper --------------------
-async function scanKeys(pattern) {
-  return new Promise((resolve, reject) => {
-    const stream = redisClient.scanStream({ match: pattern, count: 100 });
-    const keys = [];
-    stream.on('data', (resultKeys) => {
-      if (resultKeys && resultKeys.length) keys.push(...resultKeys);
-    });
-    stream.on('end', () => resolve(keys));
-    stream.on('error', (err) => reject(err));
-  });
-}
-
-// -------------------- Rate limit helpers --------------------
-async function checkIpRateLimit(key, limit, windowSec) {
-  const count = await redisClient.incr(key);
-  if (count === 1) await redisClient.expire(key, windowSec);
-  return count <= limit;
-}
-
-// -------------------- Redis TTL / ミュート helpers --------------------
-async function getOrResetByTTL(key, defaultValue = 0, expireSec = 0) {
-  let value = Number(await redisClient.get(key)) || 0;
-  const ttl = await redisClient.ttl(key);
-
-  if (ttl === -2) {
-    value = defaultValue;
-    if (expireSec > 0) {
-      await redisClient.set(key, value, 'EX', expireSec);
-    }
-  }
-
-  return value;
-}
-
-async function applySpamMute(clientId) {
-  const muteKey = `msg:mute:${clientId}`;
-  const muteLevelKey = `msg:mute_level:${clientId}`;
-  const lastMuteKey = `msg:last_mute:${clientId}`;
-
-  let muteLevel = await getOrResetByTTL(muteLevelKey, 0, 10 * 60);
-
-  const muteSeconds = Math.min(BASE_MUTE_SEC * 2 ** muteLevel, MAX_MUTE_SEC);
-
-  await redisClient.set(muteKey, '1', 'EX', muteSeconds);
-  await redisClient.set(muteLevelKey, muteLevel + 1, 'EX', 10 * 60);
-  await redisClient.set(lastMuteKey, Date.now(), 'EX', 10 * 60);
-
-  return muteSeconds;
-}
-
-async function checkRateLimit(key, windowMs) {
-  const last = await getOrResetByTTL(key, 0, Math.ceil(windowMs / 1000));
-  const now = Date.now();
-  if (last && now - Number(last) < windowMs) return false;
-  await redisClient.set(key, now, 'PX', windowMs);
-  return true;
-}
-
-async function checkCountLimit(key, limit, windowSec) {
-  const count = await getOrResetByTTL(key, 0, windowSec);
-  if (count + 1 > limit) return false;
-  await redisClient.incr(key);
-  return true;
-}
-
-// --- spam-check 共通関数 ---
-async function handleSpamCheck(clientId) {
-  const lastTimeKey = `msg:last_time:${clientId}`;
-  const repeatCountKey = `msg:repeat_interval_count:${clientId}`;
-  const lastIntervalKey = `msg:last_interval:${clientId}`;
-
-  const lastTime = Number(await redisClient.get(lastTimeKey)) || 0;
-  const lastInterval = Number(await redisClient.get(lastIntervalKey)) || 0;
-  let intervalCount = Number(await redisClient.get(repeatCountKey)) || 0;
-
-  const now = Date.now();
-  const interval = now - lastTime;
-
-  if (lastTime && Math.abs(interval - lastInterval) < 300) {
-    intervalCount++;
-  } else {
-    intervalCount = 1;
-  }
-
-  await redisClient.set(repeatCountKey, intervalCount, 'EX', SPAM_CHECK_WINDOW);
-  await redisClient.set(lastIntervalKey, interval, 'EX', SPAM_CHECK_WINDOW);
-  await redisClient.set(lastTimeKey, now, 'EX', SPAM_CHECK_WINDOW);
-
-  if (intervalCount >= REPEAT_LIMIT) {
-    const muteSeconds = await applySpamMute(clientId);
-    logAction({ user: clientId, action: 'messageMutedBySpam', extra: { muteSeconds } });
-    return muteSeconds;
-  }
-
-  return 0;
-}
-
-// -------------------- Safe emit helpers --------------------
+// -------------------- Safe emit --------------------
 function safeEmitSocket(socket, event, payload) {
   if (!socket || typeof socket.emit !== 'function') return false;
   try {
     socket.emit(event, payload);
     return true;
   } catch (e) {
+    try { console.error('safeEmitSocket failed', e); } catch {}
     return false;
   }
 }
 
 function emitUserToast(ioInstance, clientId, message) {
-  // check if there is at least one socket in user room
   const room = ioInstance.sockets.adapter.rooms.get(`__user:${clientId}`);
   if (!room || room.size === 0) return;
   ioInstance.to(`__user:${clientId}`).emit('toast', {
@@ -253,14 +137,13 @@ function createAuthToken() {
 
 async function validateAuthToken(token) {
   if (!token) return null;
-  return (await redisClient.get(`token:${token}`)) || null;
+  return (await redisClient.get(KEYS.token(token))) || null;
 }
 
 // -------------------- Express & Socket.IO setup --------------------
 const app = express();
 app.use(express.json({ limit: '100kb' }));
 
-// --- asyncHandler ヘルパー宣言 ---
 const asyncHandler = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -283,7 +166,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.set('trust proxy', true); // Render 用
+app.set('trust proxy', true);
 
 const httpServer = http.createServer(app);
 const io = new SocketIOServer(httpServer, {
@@ -294,31 +177,52 @@ const io = new SocketIOServer(httpServer, {
   },
 });
 
-// -------------------- Monthly Redis Reset (flushdb retained) --------------------
+// -------------------- サービス初期化 --------------------
+// spamService: expects signature createSpamService(redis, logger, KEYS, config)
+const spamService = createSpamService(redisClient, safeLogAction, KEYS, {
+  messageRateLimitMs: MESSAGE_RATE_LIMIT_MS,
+});
+
+// wrapperFactory: expects signature createWrapperFactory({redisClient, io, log, safeEmitSocket})
+const wrapperFactory = createWrapperFactory({ redisClient, io, log: safeLogAction, safeEmitSocket });
+
+// -------------------- Monthly Redis Reset（messages:* のみ削除） --------------------
 async function monthlyRedisReset(ioInstance) {
   const now = new Date();
   const jstNow = toJST(now);
   const currentMonth = `${jstNow.getUTCFullYear()}-${pad(jstNow.getUTCMonth() + 1)}`;
 
   try {
-    const savedMonth = await redisClient.get('system:current_month');
+    const savedMonth = await redisClient.get(KEYS.systemCurrentMonth());
     if (savedMonth === currentMonth) return;
 
-    const lockKey = 'system:reset_lock';
+    const lockKey = KEYS.resetLock();
     const locked = await redisClient.set(lockKey, '1', 'NX', 'EX', 30);
     if (!locked) return;
 
-    console.log('[Redis] Month changed, flushdb start');
+    console.log('[Redis] Month changed, deleting messages:* keys (safe)');
 
-    const keys = await scanKeys('messages:*');
-    const targetRoomIds = keys.map((k) => k.slice('messages:'.length));
+    // collect roomIds incrementally (no global memory blow)
+    const roomIds = new Set();
+    await processKeysByPattern(redisClient, KEYS.messagesPattern(), async (keys) => {
+      keys.forEach((k) => {
+        const prefix = 'messages:';
+        if (k.startsWith(prefix)) roomIds.add(k.slice(prefix.length));
+      });
+    });
 
-    await redisClient.flushdb();
-    await redisClient.set('system:current_month', currentMonth);
+    // delete messages:* in streaming fashion using helper
+    await processKeysByPattern(redisClient, KEYS.messagesPattern(), async (keys) => {
+      const pipeline = redisClient.pipeline();
+      keys.forEach((k) => pipeline.del(k));
+      await pipeline.exec();
+    });
+
+    await redisClient.set(KEYS.systemCurrentMonth(), currentMonth);
 
     const systemMessage = createSystemMessage('<strong>メンテナンスのためデータベースがリセットされました</strong>');
 
-    for (const roomId of targetRoomIds) {
+    for (const roomId of roomIds) {
       ioInstance.to(roomId).emit('newMessage', {
         username: systemMessage.username,
         message: systemMessage.message,
@@ -327,7 +231,7 @@ async function monthlyRedisReset(ioInstance) {
       });
     }
 
-    console.log('[Redis] Flushdb completed');
+    console.log('[Redis] messages:* deletion completed');
   } catch (err) {
     console.error('[Redis] Monthly reset failed', err);
   }
@@ -339,13 +243,13 @@ function createRequireSocketSession() {
     const token = req.headers['authorization']?.replace(/^Bearer\s+/i, '');
 
     if (!token) {
-      logAction({ user: null, action: 'invalidRestToken' });
+      await safeLogAction({ user: null, action: 'invalidRestToken' });
       return res.sendStatus(401);
     }
 
     const clientId = await validateAuthToken(token);
     if (!clientId) {
-      logAction({ user: null, action: 'invalidRestToken', extra: { token: token } });
+      await safeLogAction({ user: null, action: 'invalidRestToken', extra: { token } });
       return res.sendStatus(403);
     }
 
@@ -353,7 +257,6 @@ function createRequireSocketSession() {
     next();
   };
 }
-
 const requireSocketSession = createRequireSocketSession();
 
 // -------------------- API --------------------
@@ -361,7 +264,7 @@ async function getMessagesHandler(req, res) {
   const roomId = req.params.roomId;
   if (!ROOM_ID_PATTERN.test(roomId)) return res.sendStatus(400);
 
-  const rawMessages = await redisClient.lrange(`messages:${roomId}`, 0, -1);
+  const rawMessages = await redisClient.lrange(KEYS.messages(roomId), 0, -1);
   const messages = rawMessages.map((m) => {
     const parsed = JSON.parse(m);
     return {
@@ -374,7 +277,6 @@ async function getMessagesHandler(req, res) {
 
   res.json(messages);
 }
-
 app.get('/api/messages/:roomId', requireSocketSession, asyncHandler(getMessagesHandler));
 
 async function postMessageHandler(req, res) {
@@ -386,21 +288,14 @@ async function postMessageHandler(req, res) {
   const clientId = req.clientId;
   if (!clientId) return res.sendStatus(403);
 
-  const username = await redisClient.get(`username:${clientId}`);
+  const username = await redisClient.get(KEYS.username(clientId));
   if (!username) return res.status(400).json({ error: 'Username not set' });
 
-  const muteKey = `msg:mute:${clientId}`;
-  if (await redisClient.exists(muteKey)) return res.sendStatus(429);
-
-  if (!(await checkRateLimit(`ratelimit:msg:${clientId}`, MESSAGE_RATE_LIMIT_MS))) {
-    emitUserToast(io, clientId, '送信間隔が短すぎます');
-    return res.sendStatus(429);
-  }
-
-  // 連続送信スパムチェック
-  const muteSeconds = await handleSpamCheck(clientId);
-  if (muteSeconds > 0) {
-    emitUserToast(io, clientId, `スパムを検知したため${muteSeconds}秒間ミュートされました`);
+  // spamService.check encapsulates mute/isMuted/rate/interval logic
+  const spamResult = await spamService.check(clientId);
+  if (spamResult.muted) {
+    emitUserToast(io, clientId, spamResult.muteSec ? `スパムを検知したため${spamResult.muteSec}秒間ミュートされました` : '送信が制限されています');
+    await safeLogAction({ user: clientId, action: 'sendMessageBlocked', extra: { reason: spamResult.reason || 'spam' } });
     return res.sendStatus(429);
   }
 
@@ -411,20 +306,14 @@ async function postMessageHandler(req, res) {
     seed,
   };
 
-  const roomKey = `messages:${roomId}`;
-  const luaScript = `
-    redis.call('RPUSH', KEYS[1], ARGV[1])
-    redis.call('LTRIM', KEYS[1], -100, -1)
-    return 1
-  `;
-  await redisClient.eval(luaScript, 1, roomKey, JSON.stringify(storedMessage));
+  // push + trim via helper (atomic LUA inside helper)
+  await pushAndTrimList(redisClient, KEYS.messages(roomId), JSON.stringify(storedMessage), 100);
 
   io.to(roomId).emit('newMessage', storedMessage);
-  logAction({ user: clientId, action: 'sendMessage', extra: { roomId, message: storedMessage.message } });
+  await safeLogAction({ user: clientId, action: 'sendMessage', extra: { roomId, message: storedMessage.message } });
 
   res.json({ ok: true });
 }
-
 app.post('/api/messages', requireSocketSession, asyncHandler(postMessageHandler));
 
 // -------------------- Username API --------------------
@@ -444,12 +333,14 @@ async function setUsernameHandler(req, res) {
   }
 
   const sanitized = escapeHTML(username.trim());
-  const key = `username:${clientId}`;
+  const key = KEYS.username(clientId);
   const current = await redisClient.get(key);
 
   if (current === sanitized) return res.json({ ok: true });
 
-  if (!(await checkRateLimit(`ratelimit:username:${clientId}`, 30000))) {
+  // rate-limit username change (use ms-based helper)
+  const rateKey = `ratelimit:username:${clientId}`; // optional: move into KEYS if desired
+  if (!(await checkRateLimitMs(redisClient, rateKey, 30000))) {
     emitUserToast(io, clientId, 'ユーザー名の変更は30秒以上間隔をあけてください');
     return res.sendStatus(429);
   }
@@ -457,23 +348,27 @@ async function setUsernameHandler(req, res) {
   await redisClient.set(key, sanitized, 'EX', 60 * 60 * 24);
 
   if (!current) {
-    logAction({ user: clientId, action: 'usernameSet', extra: { newUsername: sanitized } });
+    await safeLogAction({ user: clientId, action: 'usernameSet', extra: { newUsername: sanitized } });
     emitUserToast(io, clientId, 'ユーザー名が登録されました');
   } else {
-    logAction({ user: clientId, action: 'usernameChanged', extra: { oldUsername: current, newUsername: sanitized } });
+    await safeLogAction({ user: clientId, action: 'usernameChanged', extra: { oldUsername: current, newUsername: sanitized } });
     emitUserToast(io, clientId, 'ユーザー名を変更しました');
   }
 
   res.json({ ok: true });
 }
-
 app.post('/api/username', requireSocketSession, asyncHandler(setUsernameHandler));
 
 // -------------------- Auth API --------------------
 async function authHandler(req, res) {
   const ip = req.ip;
   const rateKey = `ratelimit:auth:ip:${ip}`;
-  const allowed = await checkIpRateLimit(rateKey, 5, 60 * 60);
+  // simple IP counter
+  const allowed = await (async () => {
+    const count = await redisClient.incr(rateKey);
+    if (count === 1) await redisClient.expire(rateKey, 60 * 60);
+    return count <= 5;
+  })();
   if (!allowed) return res.sendStatus(429);
 
   const { username } = req.body;
@@ -484,13 +379,12 @@ async function authHandler(req, res) {
   const clientId = crypto.randomUUID();
   const token = createAuthToken();
 
-  await redisClient.set(`token:${token}`, clientId, 'EX', 60 * 60 * 24);
-  await redisClient.set(`username:${clientId}`, escapeHTML(username), 'EX', 60 * 60 * 24);
+  await redisClient.set(KEYS.token(token), clientId, 'EX', 60 * 60 * 24);
+  await redisClient.set(KEYS.username(clientId), escapeHTML(username), 'EX', 60 * 60 * 24);
 
-  logAction({ user: clientId, action: 'issueToken' });
+  await safeLogAction({ user: clientId, action: 'issueToken' });
   res.json({ token, clientId });
 }
-
 app.post('/api/auth', asyncHandler(authHandler));
 
 // -------------------- Admin / Clear API --------------------
@@ -500,49 +394,47 @@ async function clearMessagesHandler(req, res) {
   if (!clientId) return res.sendStatus(403);
 
   if (password !== ADMIN_PASS) {
-    logAction({ user: clientId, action: 'InvalidAdminPassword', extra: { roomId } });
+    await safeLogAction({ user: clientId, action: 'InvalidAdminPassword', extra: { roomId } });
     emitUserToast(io, clientId, '管理者パスワードが正しくありません');
     return res.sendStatus(403);
   }
 
-  if (!(await checkRateLimit(`ratelimit:clear:${clientId}`, 30000))) {
+  // rate-limit admin clears (ms-based)
+  if (!(await checkRateLimitMs(redisClient, `ratelimit:clear:${clientId}`, 30000))) {
     emitUserToast(io, clientId, '削除操作は30秒以上間隔をあけてください');
     return res.sendStatus(429);
   }
 
   if (!roomId || !ROOM_ID_PATTERN.test(roomId)) return res.sendStatus(400);
 
-  await redisClient.del(`messages:${roomId}`);
+  await redisClient.del(KEYS.messages(roomId));
   io.to(roomId).emit('clearMessages');
   emitRoomToast(io, roomId, '全メッセージ削除されました');
-  logAction({ user: clientId, action: 'clearMessages', extra: { roomId } });
+  await safeLogAction({ user: clientId, action: 'clearMessages', extra: { roomId } });
 
   res.json({ ok: true });
 }
-
 app.post('/api/clear', requireSocketSession, asyncHandler(clearMessagesHandler));
 
 // -------------------- Socket.IO middleware & handlers --------------------
 io.use(async (socket, next) => {
   try {
-    // ensure socket.data exists
     socket.data = socket.data || {};
 
     const token = socket.handshake.auth?.token;
     if (!token) {
-      logAction({ user: null, action: 'invalidSocketToken' });
+      await safeLogAction({ user: null, action: 'invalidSocketToken' });
       return next(new Error('Authentication required'));
     }
 
     const clientId = await validateAuthToken(token);
     if (!clientId) {
-      logAction({ user: null, action: 'invalidSocketToken', extra: { token: token } });
+      await safeLogAction({ user: null, action: 'invalidSocketToken', extra: { token } });
       return next(new Error('Invalid token'));
     }
 
     socket.data.clientId = clientId;
     socket.data.authenticated = true;
-
     socket.join(`__user:${clientId}`);
     next();
   } catch (err) {
@@ -551,26 +443,8 @@ io.use(async (socket, next) => {
 });
 
 io.on('connection', (socket) => {
-  const wrap = (fn) => (...args) => {
-    if (!socket) {
-      console.warn('Invalid socket in handler (socket missing)', args);
-      return;
-    }
-    if (typeof socket.emit !== 'function') {
-      console.warn('Invalid socket in handler (emit missing)', args);
-      return;
-    }
-    Promise.resolve(fn(socket, ...args)).catch((err) => {
-      console.error('[Socket.IO] Error in handler:', err);
-      try {
-        socket.emit('error', { message: err.message || 'Internal Server Error' });
-      } catch (e) {
-        // ignore
-      }
-    });
-  };
+  const wrap = wrapperFactory(socket); // wrapperFactory returns (socket) => (fn) => wrappedHandler
 
-  // joinRoom event
   socket.on('joinRoom', wrap(async (socket, data = {}) => {
     const { roomId } = data;
     if (!socket.data?.authenticated || !socket.data?.clientId) {
@@ -578,7 +452,7 @@ io.on('connection', (socket) => {
       return;
     }
     if (!roomId || !ROOM_ID_PATTERN.test(roomId)) {
-      logAction({ user: socket.data.clientId, action: 'joinRoomFailed', extra: { roomId } });
+      await safeLogAction({ user: socket.data.clientId, action: 'joinRoomFailed', extra: { roomId } });
       return;
     }
 
@@ -587,12 +461,15 @@ io.on('connection', (socket) => {
     socket.join(roomId);
     socket.data.roomId = roomId;
 
-    const username = await redisClient.get(`username:${socket.data.clientId}`);
-    logAction({ user: socket.data.clientId, action: 'joinRoom', extra: { roomId } });
+    const username = await redisClient.get(KEYS.username(socket.data.clientId));
+    await safeLogAction({ user: socket.data.clientId, action: 'joinRoom', extra: { roomId } });
 
     const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
     io.to(roomId).emit('roomUserCount', roomSize);
-    safeEmitSocket(socket, 'joinedRoom', { roomId });
+
+    if (!safeEmitSocket(socket, 'joinedRoom', { roomId })) {
+      await safeLogAction({ user: socket.data.clientId, action: 'emitFailed', extra: { event: 'joinedRoom' } });
+    }
   }));
 
   socket.on('disconnect', async (reason) => {
@@ -606,7 +483,7 @@ io.on('connection', (socket) => {
       }
 
       if (clientId) {
-        logAction({ user: clientId, action: 'disconnect', extra: { roomId, reason } });
+        await safeLogAction({ user: clientId, action: 'disconnect', extra: { roomId, reason } });
       }
     } catch (err) {
       console.error('Error in disconnect handler', err);
@@ -632,7 +509,6 @@ function errorHandler(err, req, res, next) {
   const message = err.message || 'Internal Server Error';
   res.status(status).json({ error: message });
 }
-
 app.use(errorHandler);
 
 // -------------------- サーバー起動 --------------------
