@@ -471,21 +471,45 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function saveProfile() {
-    const v = (elements.profileNameInput?.value || '').trim();
+    const input = elements.profileNameInput;
+    const v = (input?.value || '').trim();
+
     if (!v) {
       showToast('ユーザー名は空です');
       return;
     }
-    if (v.length > 24) showToast('ユーザー名は24文字以内にしてください');
+    if (v.length > 24) {
+      showToast('ユーザー名は24文字以内にしてください');
+      return;
+    }
+
+    const button = elements.saveProfileButton;
+    button.disabled = true;
 
     try {
+      if (!myToken) {
+        try {
+          await obtainToken();
+        } catch (e) {
+          if (e.message === 'rate_limited') {
+            showToast('認証が制限されています。しばらく待ってください');
+          } else {
+            showToast('認証に失敗しました');
+          }
+          return;
+        }
+      }
+
+      // username 保存
       const res = await fetchWithAuth(`${SERVER_URL}/api/username`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${myToken}` },
-        body: JSON.stringify({ username: v })
+        body: JSON.stringify({ username: v }),
       });
 
       if (!res.ok) {
+        const body = await safeReadBody(res);
+        console.warn('[saveProfile] failed', res.status, body);
         showToast('プロフィール保存に失敗しました');
         return;
       }
@@ -508,11 +532,12 @@ document.addEventListener('DOMContentLoaded', () => {
         sendMessage(pm);
       }
     } catch (e) {
-      console.error(e);
+      console.error('[saveProfile] error', e);
       showToast('通信エラーが発生しました');
+    } finally {
+      button.disabled = false;
     }
   }
-
   /* ---------- モーダル Enterキー対応 ---------- */
   function addEnterKeyForModal(modal, action, close) {
     if (!modal) return;
