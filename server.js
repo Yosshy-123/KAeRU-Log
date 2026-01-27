@@ -275,7 +275,7 @@ async function postMessageHandler(req, res) {
   const username = await redisClient.get(KEYS.username(clientId));
   if (!username) return res.status(400).json({ error: 'Username not set' });
 
-  const spamResult = await spamService.handleMessage(clientId);
+  const spamResult = await spamService.check(clientId);
   if (spamResult.muted) {
     emitUserToast(io, clientId, spamResult.muteSec ? `スパムを検知したため${spamResult.muteSec}秒間ミュートされました` : '送信が制限されています');
     await safeLogAction({ user: clientId, action: 'sendMessageBlocked', extra: { reason: spamResult.reason || 'spam' } });
