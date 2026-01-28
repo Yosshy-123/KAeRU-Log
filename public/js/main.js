@@ -167,7 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function createSocket() {
-    socket = io(SERVER_URL, { auth: { token: myToken }, transports: ['websocket'] });
+    socket = io(SERVER_URL, { auth: { token: myToken } });
     socket.on('connect', () => {
       socket.emit('joinRoom', { roomId });
     });
