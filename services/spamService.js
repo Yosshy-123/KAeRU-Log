@@ -1,5 +1,8 @@
 'use strict';
 
+const fs = require('fs');
+const Path = require('path');
+
 module.exports = function createSpamService(redis, logger, KEYS, config = {}) {
   const BASE_MUTE_SEC = config.baseMuteSec || 30;
   const MAX_MUTE_SEC = config.maxMuteSec || 60 * 10;
@@ -13,37 +16,27 @@ module.exports = function createSpamService(redis, logger, KEYS, config = {}) {
   const INTERVAL_JITTER_MS = typeof config.intervalJitterMs === 'number' ? config.intervalJitterMs : 300;
   const INTERVAL_WINDOW_SEC = typeof config.intervalWindowSec === 'number' ? config.intervalWindowSec : 60 * 60;
 
-    function calcMuteSeconds(level) {
-    const sec = BASE_MUTE_SEC * Math.pow(2, level);
-    return Math.min(sec, MAX_MUTE_SEC);
-  }
-
-  async function getTTLSeconds(key) {
-    try {
-      const ttl = await redis.ttl(key);
-      if (typeof ttl !== 'number' || ttl < 0) return 0;
-      return ttl;
-    } catch {
-      return 0;
-    }
+  const luaPath = Path.join(__dirname, '..', 'lua', 'spamService.lua');
+  let luaScript = '';
+  try {
+    luaScript = fs.readFileSync(luaPath, 'utf8');
+    redis.defineCommand('spamCheckLua', { numberOfKeys: 5, lua: luaScript });
+  } catch (err) {
+    console.error('[spamService] failed to load lua script', err);
   }
 
   async function isMuted(clientId) {
     if (!clientId) return false;
     try {
       return !!(await redis.exists(KEYS.mute(clientId)));
-    } catch {
+    } catch (err) {
+      try { await logger?.({ user: clientId, action: 'isMutedRedisError', extra: { error: String(err) } }); } catch (e) {}
       return false; // fail-open
     }
   }
 
-  async function check(clientId) {
-    if (!clientId) {
-      return { muted: false, rejected: false, reason: null, muteSec: 0 };
-    }
-
+  async function jsFallbackCheck(clientId) {
     const now = Date.now();
-
     const lastKey = KEYS.spamLastTime(clientId);
     const prevDeltaKey = KEYS.spamLastInterval(clientId);
     const repeatKey = KEYS.spamRepeatCount(clientId);
@@ -51,60 +44,36 @@ module.exports = function createSpamService(redis, logger, KEYS, config = {}) {
     const muteLevelKey = KEYS.muteLevel(clientId);
 
     try {
-      /* -------------------- already muted -------------------- */
       if (await redis.exists(muteKey)) {
-        return {
-          muted: true,
-          rejected: true,
-          reason: 'already-muted',
-          muteSec: await getTTLSeconds(muteKey),
-        };
+        const ttl = await redis.ttl(muteKey).catch(() => 0);
+        return { muted: true, rejected: true, reason: 'already-muted', muteSec: ttl || 0 };
       }
 
       const lastRaw = await redis.get(lastKey);
       const last = lastRaw ? Number(lastRaw) : 0;
-
-      /* -------------------- first message -------------------- */
       if (!last) {
         await redis.set(lastKey, String(now), 'EX', INTERVAL_WINDOW_SEC);
         return { muted: false, rejected: false, reason: null, muteSec: 0 };
       }
 
       const delta = now - last;
-
-      /* -------------------- hard rate limit -------------------- */
       if (delta < MESSAGE_RATE_LIMIT_MS) {
         await redis.set(lastKey, String(now), 'EX', INTERVAL_WINDOW_SEC).catch(() => {});
-
-        await logger?.({
-          user: clientId,
-          action: 'rateLimited',
-          extra: { delta, limitMs: MESSAGE_RATE_LIMIT_MS },
-        }).catch(() => {});
-
-        return {
-          muted: false,
-          rejected: true,
-          reason: 'rate-limit',
-          muteSec: 0,
-        };
+        await logger?.({ user: clientId, action: 'rateLimited', extra: { delta, limitMs: MESSAGE_RATE_LIMIT_MS } }).catch(() => {});
+        return { muted: false, rejected: true, reason: 'rate-limit', muteSec: 0 };
       }
 
-      /* -------------------- mechanical interval detection -------------------- */
       const prevDeltaRaw = await redis.get(prevDeltaKey);
       const prevDelta = prevDeltaRaw ? Number(prevDeltaRaw) : null;
 
       if (prevDelta !== null && Number.isFinite(prevDelta)) {
         if (Math.abs(delta - prevDelta) <= INTERVAL_JITTER_MS) {
           const repeat = await redis.incr(repeatKey);
-          if (repeat === 1) {
-            await redis.expire(repeatKey, INTERVAL_WINDOW_SEC);
-          }
-
+          if (repeat === 1) await redis.expire(repeatKey, INTERVAL_WINDOW_SEC);
           if (repeat >= REPEAT_LIMIT) {
             const levelRaw = await redis.get(muteLevelKey);
             const level = Number.isInteger(Number(levelRaw)) ? Number(levelRaw) : 0;
-            const muteSec = calcMuteSeconds(level);
+            const muteSec = Math.min(BASE_MUTE_SEC * Math.pow(2, level), MAX_MUTE_SEC);
 
             const pl = redis.pipeline();
             pl.set(muteKey, '1', 'EX', muteSec);
@@ -116,25 +85,14 @@ module.exports = function createSpamService(redis, logger, KEYS, config = {}) {
             pl.set(lastKey, String(now), 'EX', INTERVAL_WINDOW_SEC);
             await pl.exec();
 
-            await logger?.({
-              user: clientId,
-              action: 'spamMuted',
-              extra: { muteSec, level: level + 1, reason: 'stable-delta' },
-            }).catch(() => {});
-
-            return {
-              muted: true,
-              rejected: true,
-              reason: 'stable-delta',
-              muteSec,
-            };
+            await logger?.({ user: clientId, action: 'spamMuted', extra: { muteSec, level: level + 1, reason: 'stable-delta' } }).catch(() => {});
+            return { muted: true, rejected: true, reason: 'stable-delta', muteSec };
           }
         } else {
           await redis.del(repeatKey).catch(() => {});
         }
       }
 
-      /* -------------------- accept message -------------------- */
       const pl = redis.pipeline();
       pl.set(prevDeltaKey, String(delta), 'EX', INTERVAL_WINDOW_SEC);
       pl.set(lastKey, String(now), 'EX', INTERVAL_WINDOW_SEC);
@@ -142,14 +100,65 @@ module.exports = function createSpamService(redis, logger, KEYS, config = {}) {
 
       return { muted: false, rejected: false, reason: null, muteSec: 0 };
     } catch (err) {
-      await logger?.({
-        user: clientId,
-        action: 'spamCheckError',
-        extra: { error: String(err) },
-      }).catch(() => {});
-
-      // fail-open
+      await logger?.({ user: clientId, action: 'spamCheckError', extra: { error: String(err) } }).catch(() => {});
       return { muted: false, rejected: false, reason: 'error', muteSec: 0 };
+    }
+  }
+
+  async function check(clientId) {
+    if (!clientId) {
+      return { muted: false, rejected: false, reason: null, muteSec: 0 };
+    }
+
+    const lastKey = KEYS.spamLastTime(clientId);
+    const prevDeltaKey = KEYS.spamLastInterval(clientId);
+    const repeatKey = KEYS.spamRepeatCount(clientId);
+    const muteKey = KEYS.mute(clientId);
+    const muteLevelKey = KEYS.muteLevel(clientId);
+
+    const now = Date.now();
+
+    if (typeof redis.spamCheckLua !== 'function') {
+      return jsFallbackCheck(clientId);
+    }
+
+    try {
+      const res = await redis.spamCheckLua(
+        lastKey,
+        prevDeltaKey,
+        repeatKey,
+        muteKey,
+        muteLevelKey,
+        String(now),
+        String(MESSAGE_RATE_LIMIT_MS),
+        String(INTERVAL_JITTER_MS),
+        String(INTERVAL_WINDOW_SEC),
+        String(BASE_MUTE_SEC),
+        String(MAX_MUTE_SEC),
+        String(REPEAT_LIMIT)
+      );
+
+      if (!res || !Array.isArray(res) || res.length < 4) {
+        await logger?.({ user: clientId, action: 'spamLuaBadResponse', extra: { res } }).catch(() => {});
+        return jsFallbackCheck(clientId);
+      }
+
+      const muted = res[0] === '1';
+      const rejected = res[1] === '1';
+      const reason = res[2] || null;
+      const muteSec = Number(res[3]) || 0;
+
+      if (rejected) {
+        await logger?.({ user: clientId, action: 'sendMessageRejected', extra: { reason } }).catch(() => {});
+      }
+      if (muted) {
+        await logger?.({ user: clientId, action: 'sendMessageMuted', extra: { reason, muteSec } }).catch(() => {});
+      }
+
+      return { muted, rejected, reason, muteSec };
+    } catch (err) {
+      await logger?.({ user: clientId, action: 'spamLuaError', extra: { error: String(err) } }).catch(() => {});
+      return jsFallbackCheck(clientId);
     }
   }
 
