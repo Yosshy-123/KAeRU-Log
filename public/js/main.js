@@ -203,27 +203,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /* ---------- API ヘルパー ---------- */
   async function obtainToken() {
-    // username がなければプロフィール入力を促す
-    if (!myName) {
-      openProfileModal();
-      throw new Error('username required');
-    }
+    const reqBody = {};
+    if (myName) reqBody.username = myName;
 
     const res = await fetch(`${SERVER_URL}/api/auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: myName }),
+      body: JSON.stringify(reqBody),
     });
 
     if (!res.ok) {
-      throw new Error('failed to obtain token');
+      const text = await res.text().catch(() => '');
+      throw new Error(`auth failed: ${res.status} ${text}`);
     }
     const data = await res.json();
     if (data?.token) {
       myToken = data.token;
       localStorage.setItem('chatToken', myToken);
-      // server は clientId, username も返すが client 側は token を使えば OK
-      console.log('[Auth] token obtained');
+
+      if (data.username && (!myName || myName !== data.username)) {
+        myName = data.username;
+        localStorage.setItem('chat_username', myName);
+      }
+
+      console.log('[Auth] token obtained', { username: myName });
       return myToken;
     }
     throw new Error('invalid auth response');
@@ -235,7 +238,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const res = await fetch(url, opts);
 
-    // 401/403 が返ってきたらトークン再取得を試みる
     if ((res.status === 401 || res.status === 403) && retry) {
       try {
         myToken = null;
@@ -244,7 +246,7 @@ document.addEventListener('DOMContentLoaded', () => {
         opts.headers['Authorization'] = `Bearer ${myToken}`;
         return await fetchWithAuth(url, opts, false);
       } catch (e) {
-        return res; // 再取得失敗はそのまま返す
+        return res;
       }
     }
     return res;
@@ -297,10 +299,10 @@ document.addEventListener('DOMContentLoaded', () => {
           await obtainToken();
         } catch (e) {
           showToast('認証に失敗しました');
-          isSending = false;
-          button.disabled = false;
-          button.textContent = '送信';
+          openProfileModal();
           return;
+        } finally {
+          pendingMessage = null;
         }
       }
 
@@ -310,8 +312,26 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify(payload),
       });
 
-      if (!res || !res.ok) {
+      if (!res) {
         showToast('送信できませんでした');
+        return;
+      }
+
+      if (res.status === 401 || res.status === 403) {
+        showToast('認証が必要です');
+        myToken = null;
+        localStorage.removeItem('chatToken');
+        openProfileModal();
+        return;
+      }
+
+      if (res.status === 429) {
+        showToast('送信が制限されています（スパム/レート制限）');
+        return;
+      }
+
+      if (!res.ok) {
+        showToast('送信に失敗しました');
         return;
       }
 
@@ -323,10 +343,10 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error(e);
       showToast('通信エラーが発生しました');
     } finally {
-      if (pendingMessage && !overridePayload) pendingMessage = null;
       button.disabled = false;
       button.textContent = '送信';
       isSending = false;
+      if (pendingMessage && pendingMessage === overridePayload) pendingMessage = null;
     }
   }
 
@@ -342,6 +362,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
+      if (!myToken) {
+        try {
+          await obtainToken();
+        } catch (e) {
+          showToast('認証に失敗しました');
+          return;
+        }
+      }
+
       const res = await fetchWithAuth(`${SERVER_URL}/api/username`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -349,6 +378,17 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          showToast('認証が必要です');
+          myToken = null;
+          localStorage.removeItem('chatToken');
+          openProfileModal();
+          return;
+        }
+        if (res.status === 429) {
+          showToast('ユーザー名変更はしばらくお待ちください');
+          return;
+        }
         showToast('プロフィール保存に失敗しました');
         return;
       }
@@ -359,10 +399,8 @@ document.addEventListener('DOMContentLoaded', () => {
       showToast('プロフィールを保存しました');
       focusInput();
 
-      // socket が未接続なら開始
       if (!socket || !socket.connected) startConnection().catch((err) => console.warn('startConnection failed', err));
 
-      // pendingMessage があれば送る
       if (pendingMessage) {
         const pm = pendingMessage;
         pendingMessage = null;
@@ -464,7 +502,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function createSocket() {
-    // 既に接続中・接続可能なら何もしない
     if (socket && (socket.connected || (socket.io && socket.io.engine && !socket.io.engine.closed))) return;
 
     socket = io(SERVER_URL, { auth: { token: myToken || '' }, transports: ['websocket'] });
@@ -492,7 +529,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (elements.messageList) elements.messageList.innerHTML = '';
     });
 
-    // server の toast を受け取ったら専用表示（scope は server 側で付与される）
     socket.on('toast', (data) => {
       if (!data || typeof data !== 'object') return;
       const { message } = data;
@@ -515,7 +551,6 @@ document.addEventListener('DOMContentLoaded', () => {
       console.warn('connect_error', err);
       const msg = String((err && err.message) || '');
       if (/Authentication|Invalid token|Authentication required/i.test(msg)) {
-        // トークン無効 → 取得し直して再接続を試みる
         myToken = null;
         localStorage.removeItem('chatToken');
         try {
@@ -528,7 +563,6 @@ document.addEventListener('DOMContentLoaded', () => {
             createSocket();
           }
         } catch (e) {
-          // 再認証失敗したらユーザー名入力を促す
           openProfileModal();
         }
       }
@@ -540,7 +574,6 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         await obtainToken();
       } catch (e) {
-        // トークン取得失敗ならプロフィールを開く
         openProfileModal();
         throw e;
       }
@@ -595,17 +628,18 @@ document.addEventListener('DOMContentLoaded', () => {
   /* ---------- 初期処理 ---------- */
   (async () => {
     try {
-      if (myToken) {
-        startConnection().catch(() => {});
-      } else if (myName) {
+      if (!myToken) {
         try {
           await obtainToken();
-          startConnection().catch(() => {});
         } catch (e) {
           openProfileModal();
         }
       } else {
-        openProfileModal();
+        startConnection().catch(() => {});
+      }
+
+      if (myToken) {
+        startConnection().catch(() => {});
       }
 
       if (pendingMessage && myToken) {
