@@ -13,8 +13,9 @@ module.exports = function createSpamService(redis, logger, KEYS, config = {}) {
   const INTERVAL_JITTER_MS = typeof config.intervalJitterMs === 'number' ? config.intervalJitterMs : 300;
   const INTERVAL_WINDOW_SEC = typeof config.intervalWindowSec === 'number' ? config.intervalWindowSec : 60 * 60;
 
-  function calcMuteSeconds(level) {
-    return Math.min(BASE_MUTE_SEC * 2 ** level, MAX_MUTE_SEC);
+    function calcMuteSeconds(level) {
+    const sec = BASE_MUTE_SEC * Math.pow(2, level);
+    return Math.min(sec, MAX_MUTE_SEC);
   }
 
   async function getTTLSeconds(key) {
@@ -73,7 +74,6 @@ module.exports = function createSpamService(redis, logger, KEYS, config = {}) {
 
       /* -------------------- hard rate limit -------------------- */
       if (delta < MESSAGE_RATE_LIMIT_MS) {
-        // update lastKey to prevent infinite retry loops
         await redis.set(lastKey, String(now), 'EX', INTERVAL_WINDOW_SEC).catch(() => {});
 
         await logger?.({
@@ -103,12 +103,14 @@ module.exports = function createSpamService(redis, logger, KEYS, config = {}) {
 
           if (repeat >= REPEAT_LIMIT) {
             const levelRaw = await redis.get(muteLevelKey);
-            const level = levelRaw ? Number(levelRaw) : 0;
+            const level = Number.isInteger(Number(levelRaw)) ? Number(levelRaw) : 0;
             const muteSec = calcMuteSeconds(level);
 
             const pl = redis.pipeline();
             pl.set(muteKey, '1', 'EX', muteSec);
-            pl.set(muteLevelKey, String(level + 1), 'EX', 10 * 60);
+            const lastTTL = await redis.ttl(lastKey).catch(() => INTERVAL_WINDOW_SEC);
+            const levelTTL = Math.max(0, lastTTL) + 10 * 60;
+            pl.set(muteLevelKey, String(level + 1), 'EX', levelTTL);
             pl.del(prevDeltaKey);
             pl.del(repeatKey);
             pl.set(lastKey, String(now), 'EX', INTERVAL_WINDOW_SEC);
