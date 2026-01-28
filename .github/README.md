@@ -20,41 +20,40 @@
 ## Directory structure
 
 ```
-/
-├─ .github/
-│  ├─ README.md
-│  ├─ README.ja.md
-│  └─ logo.png
-├─ services/
-│  └─ spamService.js
-├─ lib/
-│  ├─ redisHelpers.js
-│  └─ redisKeys.js
-├─ utils/
-│  ├─ logger.js
-│  ├─ redisUtils.js
-│  ├─ socketWrapper.js
-│  └─ tokenBucket.js
-├─ lua/
-│  ├─ tokenBucket.lua
-│  └─ spamService.lua
-├─ public/
-│  ├─ index.html
-│  ├─ js/
-│  │  ├─ main.js
-│  │  └─ socket.io.min.js
-│  ├─ css/
-│  │  └─ style.css
-│  └─ images/
-│     ├─ logo.png
-│     ├─ favicon-16x16.png
-│     ├─ favicon-32x32.png
-│     └─ favicon-96x96.png
-├─ server.js
-├─ package.json
-├─ LICENSE
-├─ render.yaml
-└─ render.gs
+├── .github/
+│   ├── logo.png
+│   ├── README.ja.md
+│   └── README.md
+├── lib/
+│   ├── redisHelpers.js
+│   └── redisKeys.js
+├── lua/
+│   ├── spamService.lua
+│   └── tokenBucket.lua
+├── public/
+│   ├── css/
+│   │   └── style.css
+│   ├── images/
+│   │   ├── favicon-16x16.png
+│   │   ├── favicon-32x32.png
+│   │   ├── favicon-96x96.png
+│   │   └── logo.png
+│   ├── js/
+│   │   ├── main.js
+│   │   └── socket.io.min.js
+│   └── index.html
+├── services/
+│   └── spamService.js
+├── utils/
+│   ├── logger.js
+│   ├── redisUtils.js
+│   ├── socketWrapper.js
+│   └── tokenBucket.js
+├── LICENSE
+├── package.json
+├── render.gs
+├── render.yaml
+└── server.js
 ```
 
 ---
