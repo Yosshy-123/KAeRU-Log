@@ -342,10 +342,10 @@ app.post('/api/username', requireSocketSession, asyncHandler(setUsernameHandler)
 async function authHandler(req, res) {
   const ip = req.ip;
 
-  // token bucket レート制限（1時間に5回）
+  // token bucket レート制限（24時間に5回）
   const allowed = await tokenBucket(redisClient, KEYS.tokenBucketAuthIp(ip), {
     capacity: 5,
-    refillPerSec: 5 / 3600,
+    refillPerSec: 5 / (24 * 60 * 60),
   });
   if (!allowed) {
     await safeLogAction({ user: null, action: 'authRateLimited', extra: { ip } });
