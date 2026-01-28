@@ -1,42 +1,38 @@
 'use strict';
 
 module.exports = function createSpamService(redis, logger, KEYS, config = {}) {
-  const BASE_MUTE_SEC = config.baseMuteSec || 30; // base mute seconds
-  const MAX_MUTE_SEC = config.maxMuteSec || 60 * 10; // 10 minutes max
+  const BASE_MUTE_SEC = config.baseMuteSec || 30;
+  const MAX_MUTE_SEC = config.maxMuteSec || 60 * 10;
   const REPEAT_LIMIT = typeof config.repeatLimit === 'number' ? config.repeatLimit : 3;
 
   const MESSAGE_RATE_LIMIT_MS =
     typeof config.messageRateLimitMs === 'number'
       ? config.messageRateLimitMs
-      : 1200; // default 1.2s
+      : 1200;
 
   const INTERVAL_JITTER_MS = typeof config.intervalJitterMs === 'number' ? config.intervalJitterMs : 300;
-  const INTERVAL_WINDOW_SEC = typeof config.intervalWindowSec === 'number' ? config.intervalWindowSec : 60 * 60; // 1 hour
+  const INTERVAL_WINDOW_SEC = typeof config.intervalWindowSec === 'number' ? config.intervalWindowSec : 60 * 60;
 
   function calcMuteSeconds(level) {
     return Math.min(BASE_MUTE_SEC * 2 ** level, MAX_MUTE_SEC);
+  }
+
+  async function getTTLSeconds(key) {
+    try {
+      const ttl = await redis.ttl(key);
+      if (typeof ttl !== 'number' || ttl < 0) return 0;
+      return ttl;
+    } catch {
+      return 0;
+    }
   }
 
   async function isMuted(clientId) {
     if (!clientId) return false;
     try {
       return !!(await redis.exists(KEYS.mute(clientId)));
-    } catch (err) {
-      try {
-        await logger?.({ user: clientId, action: 'isMutedRedisError', extra: { error: String(err) } });
-      } catch (e) {}
-      return false;
-    }
-  }
-
-  async function getTTLSeconds(key) {
-    try {
-      const ttl = await redis.ttl(key);
-      if (typeof ttl !== 'number') return 0;
-      if (ttl < 0) return 0;
-      return Math.floor(ttl);
-    } catch (err) {
-      return 0;
+    } catch {
+      return false; // fail-open
     }
   }
 
@@ -47,27 +43,27 @@ module.exports = function createSpamService(redis, logger, KEYS, config = {}) {
 
     const now = Date.now();
 
-    const lastKey = KEYS.rateMsg(clientId);
-    const prevDeltaKey = KEYS.rateInterval(clientId);
+    const lastKey = KEYS.spamLastTime(clientId);
+    const prevDeltaKey = KEYS.spamLastInterval(clientId);
     const repeatKey = KEYS.spamRepeatCount(clientId);
     const muteKey = KEYS.mute(clientId);
     const muteLevelKey = KEYS.muteLevel(clientId);
 
     try {
-      const mutedExists = await redis.exists(muteKey);
-      if (mutedExists) {
-        const ttl = await getTTLSeconds(muteKey);
+      /* -------------------- already muted -------------------- */
+      if (await redis.exists(muteKey)) {
         return {
           muted: true,
           rejected: true,
           reason: 'already-muted',
-          muteSec: ttl,
+          muteSec: await getTTLSeconds(muteKey),
         };
       }
 
       const lastRaw = await redis.get(lastKey);
       const last = lastRaw ? Number(lastRaw) : 0;
 
+      /* -------------------- first message -------------------- */
       if (!last) {
         await redis.set(lastKey, String(now), 'EX', INTERVAL_WINDOW_SEC);
         return { muted: false, rejected: false, reason: null, muteSec: 0 };
@@ -75,16 +71,16 @@ module.exports = function createSpamService(redis, logger, KEYS, config = {}) {
 
       const delta = now - last;
 
+      /* -------------------- hard rate limit -------------------- */
       if (delta < MESSAGE_RATE_LIMIT_MS) {
-        try {
-          await redis.set(lastKey, String(now), 'EX', INTERVAL_WINDOW_SEC);
-        } catch (e) {
-          // ignore set failure; we'll still return rejected
-        }
+        // update lastKey to prevent infinite retry loops
+        await redis.set(lastKey, String(now), 'EX', INTERVAL_WINDOW_SEC).catch(() => {});
 
-        try {
-          await logger?.({ user: clientId, action: 'rateLimited', extra: { delta, limitMs: MESSAGE_RATE_LIMIT_MS } });
-        } catch (e) {}
+        await logger?.({
+          user: clientId,
+          action: 'rateLimited',
+          extra: { delta, limitMs: MESSAGE_RATE_LIMIT_MS },
+        }).catch(() => {});
 
         return {
           muted: false,
@@ -94,8 +90,9 @@ module.exports = function createSpamService(redis, logger, KEYS, config = {}) {
         };
       }
 
+      /* -------------------- mechanical interval detection -------------------- */
       const prevDeltaRaw = await redis.get(prevDeltaKey);
-      const prevDelta = prevDeltaRaw !== null ? Number(prevDeltaRaw) : null;
+      const prevDelta = prevDeltaRaw ? Number(prevDeltaRaw) : null;
 
       if (prevDelta !== null && Number.isFinite(prevDelta)) {
         if (Math.abs(delta - prevDelta) <= INTERVAL_JITTER_MS) {
@@ -117,42 +114,39 @@ module.exports = function createSpamService(redis, logger, KEYS, config = {}) {
             pl.set(lastKey, String(now), 'EX', INTERVAL_WINDOW_SEC);
             await pl.exec();
 
-            try {
-              await logger?.({
-                user: clientId,
-                action: 'spamMuted',
-                extra: { muteSec, level: level + 1, reason: 'stable-delta-1h' },
-              });
-            } catch (e) {}
+            await logger?.({
+              user: clientId,
+              action: 'spamMuted',
+              extra: { muteSec, level: level + 1, reason: 'stable-delta' },
+            }).catch(() => {});
 
             return {
               muted: true,
               rejected: true,
-              reason: 'stable-delta-1h',
+              reason: 'stable-delta',
               muteSec,
             };
           }
         } else {
-          try {
-            await redis.del(repeatKey);
-          } catch (e) {}
+          await redis.del(repeatKey).catch(() => {});
         }
       }
 
-      try {
-        const pl = redis.pipeline();
-        pl.set(prevDeltaKey, String(delta), 'EX', INTERVAL_WINDOW_SEC);
-        pl.set(lastKey, String(now), 'EX', INTERVAL_WINDOW_SEC);
-        await pl.exec();
-      } catch (e) {
-        try { await logger?.({ user: clientId, action: 'redisUpdateFailed', extra: { error: String(e) } }); } catch (ee) {}
-      }
+      /* -------------------- accept message -------------------- */
+      const pl = redis.pipeline();
+      pl.set(prevDeltaKey, String(delta), 'EX', INTERVAL_WINDOW_SEC);
+      pl.set(lastKey, String(now), 'EX', INTERVAL_WINDOW_SEC);
+      await pl.exec();
 
       return { muted: false, rejected: false, reason: null, muteSec: 0 };
     } catch (err) {
-      try {
-        await logger?.({ user: clientId, action: 'spamCheckError', extra: { error: String(err) } });
-      } catch (e) {}
+      await logger?.({
+        user: clientId,
+        action: 'spamCheckError',
+        extra: { error: String(err) },
+      }).catch(() => {});
+
+      // fail-open
       return { muted: false, rejected: false, reason: 'error', muteSec: 0 };
     }
   }
