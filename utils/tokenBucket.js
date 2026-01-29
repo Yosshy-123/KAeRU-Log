@@ -41,6 +41,7 @@ module.exports = function createTokenBucket(redisClient) {
 
   async function allow(key, opts = {}) {
     if (!key) throw new Error('tokenBucket.allow: key required');
+
     const capacity = Number(opts.capacity || 1);
     const refillPerSec = Number(opts.refillPerSec || 0);
     const refillPerMs = refillPerSec / 1000;
@@ -50,19 +51,24 @@ module.exports = function createTokenBucket(redisClient) {
       throw new Error('tokenBucket.allow: invalid numeric options');
     }
 
-    if (!sha) {
-      await loadScript();
-    }
-    const evalArgs = [sha, 1, key, String(capacity), String(refillPerMs), String(nowMs)];
+    const evalArgs = [
+      sha,
+      1,
+      key,
+      String(capacity),
+      String(refillPerMs),
+      String(nowMs),
+    ];
 
     try {
       const res = await evalShaOrLoad(evalArgs);
-      if (!res || !Array.isArray(res)) {
+      if (!Array.isArray(res)) {
         return { allowed: false, tokens: 0 };
       }
-      const allowed = Number(res[0]) === 1;
-      const tokens = Number(res[1]);
-      return { allowed, tokens };
+      return {
+        allowed: Number(res[0]) === 1,
+        tokens: Number(res[1]),
+      };
     } catch (err) {
       console.error('[tokenBucket] eval error', err);
       return { allowed: false, tokens: 0, error: err };
