@@ -13,7 +13,7 @@ const KEYS = require('./lib/redisKeys');
 const { pushAndTrimList } = require('./lib/redisHelpers');
 const createSpamService = require('./services/spamService');
 const { checkRateLimitMs } = require('./utils/redisUtils');
-const tokenBucket = require('./utils/tokenBucket');
+const createTokenBucket = require('./utils/tokenBucket');
 const rawLogAction = require('./utils/logger');
 const createWrapperFactory = require('./utils/socketWrapper');
 
@@ -40,6 +40,8 @@ if (!FRONTEND_URL) {
 const redisClient = new Redis(REDIS_URL);
 redisClient.on('connect', () => console.log('Redis connected'));
 redisClient.on('error', (err) => console.error('Redis error', err));
+
+const tokenBucket = createTokenBucket(redisClient);
 
 // -------------------- ヘルパー関数 --------------------
 function escapeHTML(str = '') {
@@ -342,15 +344,20 @@ async function setUsernameHandler(req, res) {
 app.post('/api/username', requireSocketSession, asyncHandler(setUsernameHandler));
 
 // POST /api/auth
+// POST /api/auth
 async function authHandler(req, res) {
   const ip = req.ip;
 
   // token bucket レート制限（24時間に5回）
-  const allowed = await tokenBucket(redisClient, KEYS.tokenBucketAuthIp(ip), {
-    capacity: 5,
-    refillPerSec: 5 / (24 * 60 * 60),
-  });
-  if (!allowed) {
+  const result = await tokenBucket.allow(
+    KEYS.tokenBucketAuthIp(ip),
+    {
+      capacity: 5,
+      refillPerSec: 5 / (24 * 60 * 60),
+    }
+  );
+
+  if (!result.allowed) {
     await safeLogAction({ user: null, action: 'authRateLimited', extra: { ip } });
     return res.sendStatus(429);
   }
