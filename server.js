@@ -160,7 +160,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.set('trust proxy', true); // Render 用
+app.set('trust proxy', 2); // Render 用
 
 // async handler
 const asyncHandler = (fn) => (req, res, next) =>
