@@ -160,7 +160,10 @@ app.use((req, res, next) => {
   next();
 });
 
-app.set('trust proxy', 2); // Render 用
+/**
+ * Render などのリバースプロキシ環境用（hop 数は環境に応じて調整）
+ */
+app.set('trust proxy', 2);
 
 // async handler
 const asyncHandler = (fn) => (req, res, next) =>
