@@ -28,7 +28,7 @@ if newTokens >= 1 then
   newTokens = newTokens - 1
 end
 
-redis.call('HSET', key, 'tokens', tostring(newTokens), 'ts', tostring(now_ms))
+redis.call('HSET', key, 'tokens', newTokens, 'ts', now_ms)
 
 local ttlSec = 3600
 if refill_per_ms > 0 then
@@ -38,4 +38,4 @@ if refill_per_ms > 0 then
 end
 redis.call('EXPIRE', key, ttlSec)
 
-return { allowed, tostring(newTokens) }
+return { allowed, newTokens }
