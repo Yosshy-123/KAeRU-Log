@@ -25,19 +25,29 @@ module.exports = function createTokenBucket(redisClient) {
     return loadPromise;
   }
 
-  async function evalShaOrLoad(args) {
+  async function evalSafe(numKeys, keysAndArgs) {
     try {
-      if (!sha) await loadScript();
-      return await redisClient.evalsha(...args);
+      if (!sha) {
+        sha = await redisClient.script('LOAD', LUA_SOURCE);
+      }
+
+      return await redisClient.evalsha(
+        sha,
+        numKeys,
+        ...keysAndArgs
+      );
+
     } catch (err) {
-      if (err && (err.message || '').toUpperCase().includes('NOSCRIPT')) {
-        sha = null;
-        await loadScript();
-        return await redisClient.evalsha(...args);
+      if ((err.message || '').toUpperCase().includes('NOSCRIPT')) {
+        return await redisClient.eval(
+          LUA_SOURCE,
+          numKeys,
+          ...keysAndArgs
+        );
       }
       throw err;
     }
-  }
+}
 
   async function allow(key, opts = {}) {
     if (!key) throw new Error('tokenBucket.allow: key required');
@@ -47,13 +57,7 @@ module.exports = function createTokenBucket(redisClient) {
     const refillPerMs = refillPerSec / 1000;
     const nowMs = Date.now();
 
-    if (!Number.isFinite(capacity) || !Number.isFinite(refillPerMs)) {
-      throw new Error('tokenBucket.allow: invalid numeric options');
-    }
-
-    const evalArgs = [
-      sha,
-      1,
+    const keysAndArgs = [
       key,
       String(capacity),
       String(refillPerMs),
@@ -61,14 +65,13 @@ module.exports = function createTokenBucket(redisClient) {
     ];
 
     try {
-      const res = await evalShaOrLoad(evalArgs);
-      if (!Array.isArray(res)) {
-        return { allowed: false, tokens: 0 };
-      }
+      const res = await evalSafe(1, keysAndArgs);
+
       return {
         allowed: Number(res[0]) === 1,
         tokens: Number(res[1]),
       };
+
     } catch (err) {
       console.error('[tokenBucket] eval error', err);
       return { allowed: false, tokens: 0, error: err };
