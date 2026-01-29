@@ -28,7 +28,7 @@ if newTokens >= 1 then
   newTokens = newTokens - 1
 end
 
-redis.call('HMSET', key, 'tokens', tostring(newTokens), 'ts', tostring(now_ms))
+redis.call('HSET', key, 'tokens', tostring(newTokens), 'ts', tostring(now_ms))
 
 local ttlSec = 3600
 if refill_per_ms > 0 then
