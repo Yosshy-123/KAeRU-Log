@@ -1,5 +1,7 @@
 'use strict';
 
+require('dotenv').config();
+
 // -------------------- モジュール --------------------
 const express = require('express');
 const http = require('http');
