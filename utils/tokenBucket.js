@@ -50,8 +50,10 @@ module.exports = function createTokenBucket(redisClient) {
       throw new Error('tokenBucket.allow: invalid numeric options');
     }
 
-    const shaArg = sha;
-    const evalArgs = [shaArg, 1, key, String(capacity), String(refillPerMs), String(nowMs)];
+    if (!sha) {
+      await loadScript();
+    }
+    const evalArgs = [sha, 1, key, String(capacity), String(refillPerMs), String(nowMs)];
 
     try {
       const res = await evalShaOrLoad(evalArgs);
