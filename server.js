@@ -382,7 +382,7 @@ async function authHandler(req, res) {
   await redisClient.set(KEYS.token(token), clientId, 'EX', 60 * 60 * 24);
   await redisClient.set(KEYS.username(clientId), escapeHTML(username), 'EX', 60 * 60 * 24);
 
-  await safeLogAction({ user: clientId, action: 'issueToken', extra: { username } });
+  await safeLogAction({ user: clientId, action: 'issueToken' });
 
   res.json({ token, clientId, username });
 }
