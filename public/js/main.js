@@ -22,6 +22,9 @@ document.addEventListener('DOMContentLoaded', () => {
   let activeModal = null;
   let isServerToastActive = false;
   let isSending = false;
+  let authPromise = null;
+  let lastAuthAttempt = 0;
+  const AUTH_RETRY_COOLDOWN_MS = 10000;
 
   if (!mySeed) {
     mySeed = generateUserSeed(40);
@@ -203,33 +206,50 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /* ---------- API ヘルパー ---------- */
   async function obtainToken() {
-    const reqBody = {};
-    if (myName) reqBody.username = myName;
+    if (authPromise) return authPromise;
 
-    const res = await fetch(`${SERVER_URL}/api/auth`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(reqBody),
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`auth failed: ${res.status} ${text}`);
+    const now = Date.now();
+    if (now - lastAuthAttempt < AUTH_RETRY_COOLDOWN_MS) {
+      throw new Error('authCooldown');
     }
-    const data = await res.json();
-    if (data?.token) {
-      myToken = data.token;
-      localStorage.setItem('chatToken', myToken);
+    lastAuthAttempt = now;
 
-      if (data.username && (!myName || myName !== data.username)) {
-        myName = data.username;
-        localStorage.setItem('chat_username', myName);
+    authPromise = (async () => {
+      const reqBody = {};
+      if (myName) reqBody.username = myName;
+
+      const res = await fetch(`${SERVER_URL}/api/auth`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reqBody),
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        authPromise = null;
+        throw new Error(`auth failed: ${res.status} ${text}`);
       }
 
-      console.log('[Auth] token obtained', { username: myName });
-      return myToken;
-    }
-    throw new Error('invalid auth response');
+      const data = await res.json();
+      if (data?.token) {
+        myToken = data.token;
+        localStorage.setItem('chatToken', myToken);
+
+        if (data.username && (!myName || myName !== data.username)) {
+          myName = data.username;
+          localStorage.setItem('chat_username', myName);
+        }
+
+        console.log('[Auth] token obtained', { username: myName });
+        authPromise = null;
+        return myToken;
+      }
+
+      authPromise = null;
+      throw new Error('invalid auth response');
+    })();
+
+    return authPromise;
   }
 
   async function fetchWithAuth(url, opts = {}, retry = true) {
@@ -239,20 +259,35 @@ document.addEventListener('DOMContentLoaded', () => {
     const res = await fetch(url, opts);
 
     if ((res.status === 401 || res.status === 403) && retry) {
+      let code = null;
       try {
-        myToken = null;
-        localStorage.removeItem('chatToken');
-        await obtainToken();
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const body = await res.clone().json().catch(() => null);
+          code = body?.code;
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      if (code === 'token_expired') {
+        try {
+          await obtainToken();
+        } catch (e) {
+          console.warn('obtainToken failed or cooldown', e);
+          return res;
+        }
+
         opts.headers['Authorization'] = `Bearer ${myToken}`;
         return await fetchWithAuth(url, opts, false);
-      } catch (e) {
-        return res;
       }
+
+      return res;
     }
     return res;
   }
 
-  /* ---------- API: 履歴読み込み / 送信 / ユーザー名 / 管理操作 ---------- */
+  /* ---------- API ---------- */
   async function loadHistory() {
     try {
       const res = await fetchWithAuth(`${SERVER_URL}/api/messages/${encodeURIComponent(roomId)}`, {
@@ -550,7 +585,8 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.on('connect_error', async (err) => {
       console.warn('connect_error', err);
       const msg = String((err && err.message) || '');
-      if (/Authentication|Invalid token|Authentication required/i.test(msg)) {
+
+      if (/TOKEN_EXPIRED/.test(msg)) {
         myToken = null;
         localStorage.removeItem('chatToken');
         try {
@@ -565,7 +601,17 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) {
           openProfileModal();
         }
+        return;
       }
+
+      if (/NO_TOKEN/.test(msg) || /NO_TOKEN/.test(msg.toUpperCase())) {
+        myToken = null;
+        localStorage.removeItem('chatToken');
+        openProfileModal();
+        return;
+      }
+
+      openProfileModal();
     });
   }
 
