@@ -217,12 +217,12 @@ function createRequireSocketSession() {
     const token = req.headers['authorization']?.replace(/^Bearer\s+/i, '');
     if (!token) {
       await safeLogAction({ user: null, action: 'invalidRestToken' });
-      return res.sendStatus(401);
+      return res.status(401).json({ error: 'Authentication required', code: 'no_token' });
     }
     const clientId = await validateAuthToken(token);
     if (!clientId) {
       await safeLogAction({ user: null, action: 'invalidRestToken', extra: { token } });
-      return res.sendStatus(403);
+      return res.status(403).json({ error: 'Invalid or expired token', code: 'token_expired' });
     }
     req.clientId = clientId;
     next();
@@ -251,7 +251,7 @@ async function postMessageHandler(req, res) {
   if (typeof message !== 'string' || message.length === 0 || message.length > 800) return res.sendStatus(400);
 
   const clientId = req.clientId;
-  if (!clientId) return res.sendStatus(403);
+  if (!clientId) return res.status(403).json({ error: 'Authentication required', code: 'no_token' });
 
   const username = await redisClient.get(KEYS.username(clientId));
   if (!username) return res.status(400).json({ error: 'Username not set' });
@@ -309,7 +309,7 @@ app.post('/api/messages', requireSocketSession, asyncHandler(postMessageHandler)
 // POST /api/username
 async function setUsernameHandler(req, res) {
   const clientId = req.clientId;
-  if (!clientId) return res.sendStatus(403);
+  if (!clientId) return res.status(403).json({ error: 'Authentication required', code: 'no_token' });
 
   const { username } = req.body;
   if (!username || typeof username !== 'string' || username.trim().length === 0) {
@@ -345,7 +345,6 @@ async function setUsernameHandler(req, res) {
 }
 app.post('/api/username', requireSocketSession, asyncHandler(setUsernameHandler));
 
-// POST /api/auth
 // POST /api/auth
 async function authHandler(req, res) {
   const ip = req.ip;
@@ -392,7 +391,7 @@ app.post('/api/auth', asyncHandler(authHandler));
 async function clearMessagesHandler(req, res) {
   const { password, roomId } = req.body;
   const clientId = req.clientId;
-  if (!clientId) return res.sendStatus(403);
+  if (!clientId) return res.status(403).json({ error: 'Authentication required', code: 'no_token' });
 
   if (password !== ADMIN_PASS) {
     await safeLogAction({ user: clientId, action: 'InvalidAdminPassword', extra: { roomId } });
@@ -417,21 +416,19 @@ async function clearMessagesHandler(req, res) {
 app.post('/api/clear', requireSocketSession, asyncHandler(clearMessagesHandler));
 
 // -------------------- Socket.IO middleware / handlers --------------------
-
-// Socket auth middleware: handshake.auth.token を検証して __user:... ルームへ入れる
 io.use(async (socket, next) => {
   try {
     socket.data = socket.data || {};
     const token = socket.handshake.auth?.token;
     if (!token) {
       await safeLogAction({ user: null, action: 'invalidSocketToken' });
-      return next(new Error('Authentication required'));
+      return next(new Error('NO_TOKEN'));
     }
 
     const clientId = await validateAuthToken(token);
     if (!clientId) {
       await safeLogAction({ user: null, action: 'invalidSocketToken', extra: { token } });
-      return next(new Error('Invalid token'));
+      return next(new Error('TOKEN_EXPIRED'));
     }
 
     socket.data.clientId = clientId;
@@ -511,7 +508,7 @@ function errorHandler(err, req, res, next) {
   if (res.headersSent) return next(err);
   const status = err.status || 500;
   const message = err.message || 'Internal Server Error';
-  res.status(status).json({ error: message });
+  res.status(status).json({ error: message, code: err.code || 'server_error' });
 }
 app.use(errorHandler);
 
