@@ -77,16 +77,6 @@ function formatJST(date = new Date(), withSeconds = false) {
   return `${yyyy}/${mm}/${dd} ${hh}:${mi}`;
 }
 
-function createSystemMessage(htmlMessage) {
-  return {
-    username: 'システム',
-    message: htmlMessage,
-    time: formatJST(new Date()),
-    clientId: 'system',
-    seed: 'system',
-  };
-}
-
 // -------------------- ログ／Emit のラッパー --------------------
 async function safeLogAction(payload) {
   try {
@@ -196,14 +186,6 @@ async function monthlyRedisReset(ioInstance) {
 
     await redisClient.flushdb();
     await redisClient.set(KEYS.systemCurrentMonth(), currentMonth);
-
-    const systemMessage = createSystemMessage('<strong>メンテナンスのためデータベースがリセットされました</strong>');
-    ioInstance.emit('newMessage', {
-      username: systemMessage.username,
-      message: systemMessage.message,
-      time: systemMessage.time,
-      seed: systemMessage.seed,
-    });
 
     console.log('[Redis] FLUSHDB completed');
   } catch (err) {
