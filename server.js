@@ -230,7 +230,7 @@ async function postMessageHandler(req, res) {
   const { message, seed, roomId } = req.body;
   if (!roomId || !message || !seed) return res.sendStatus(400);
   if (!/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return res.sendStatus(400);
-  if (typeof message !== 'string' || message.length === 0 || message.length > 800) return res.sendStatus(400);
+  if (typeof message !== 'string' || message.length === 0 || message.length > 300) return res.sendStatus(400);
 
   const clientId = req.clientId;
   if (!clientId) return res.status(403).json({ error: 'Authentication required', code: 'no_token' });
