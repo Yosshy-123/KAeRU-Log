@@ -3,6 +3,8 @@ local prevDeltaKey = KEYS[2]
 local repeatKey = KEYS[3]
 local muteKey = KEYS[4]
 local muteLevelKey = KEYS[5]
+local lastMsgHashKey = KEYS[6]
+local repeatMsgKey = KEYS[7]
 
 local now = tonumber(ARGV[1])
 local messageRateLimitMs = tonumber(ARGV[2])
@@ -11,15 +13,58 @@ local intervalWindowSec = tonumber(ARGV[4])
 local baseMuteSec = tonumber(ARGV[5])
 local maxMuteSec = tonumber(ARGV[6])
 local repeatLimit = tonumber(ARGV[7])
+local sameMessageLimit = tonumber(ARGV[8])
+local msgHash = ARGV[9]
 
 local function to_resp(muted, rejected, reason, muteSec)
   return { tostring(muted and 1 or 0), tostring(rejected and 1 or 0), reason or '', tostring(muteSec or 0) }
+end
+
+local function apply_mute(reason)
+  local levelRaw = redis.call('get', muteLevelKey)
+  local level = 0
+  if levelRaw then level = tonumber(levelRaw) end
+
+  local muteSec = baseMuteSec * (2 ^ level)
+  if muteSec > maxMuteSec then muteSec = maxMuteSec end
+  muteSec = math.floor(muteSec)
+
+  redis.call('set', muteKey, '1', 'EX', muteSec)
+
+  local lastTTL = redis.call('ttl', lastKey)
+  if type(lastTTL) ~= 'number' or lastTTL < 0 then lastTTL = intervalWindowSec end
+  local levelTTL = lastTTL + 600
+  redis.call('set', muteLevelKey, tostring(level + 1), 'EX', levelTTL)
+
+  redis.call('del', prevDeltaKey)
+  redis.call('del', repeatKey)
+  redis.call('del', repeatMsgKey)
+  redis.call('set', lastKey, tostring(now), 'EX', intervalWindowSec)
+
+  return to_resp(true, true, reason, muteSec)
 end
 
 if redis.call('exists', muteKey) == 1 then
   local ttl = redis.call('ttl', muteKey)
   if type(ttl) ~= 'number' or ttl < 0 then ttl = 0 end
   return to_resp(true, true, 'already-muted', ttl)
+end
+
+if msgHash and msgHash ~= '' then
+  local lastHash = redis.call('get', lastMsgHashKey)
+  if lastHash and lastHash == msgHash then
+    local repMsg = redis.call('incr', repeatMsgKey)
+    if repMsg == 1 then
+      redis.call('expire', repeatMsgKey, intervalWindowSec)
+    end
+
+    if repMsg >= sameMessageLimit then
+      return apply_mute('repeat-message')
+    end
+  else
+    redis.call('set', lastMsgHashKey, msgHash, 'EX', intervalWindowSec)
+    redis.call('del', repeatMsgKey)
+  end
 end
 
 local lastRaw = redis.call('get', lastKey)
@@ -48,25 +93,7 @@ if prevDelta then
     end
 
     if rep >= repeatLimit then
-      local levelRaw = redis.call('get', muteLevelKey)
-      local level = 0
-      if levelRaw then level = tonumber(levelRaw) end
-      local muteSec = baseMuteSec * (2 ^ level)
-      if muteSec > maxMuteSec then muteSec = maxMuteSec end
-
-      redis.call('set', muteKey, '1', 'EX', math.floor(muteSec))
-
-      -- compute level TTL: lastKey TTL + 600 (10min)
-      local lastTTL = redis.call('ttl', lastKey)
-      if type(lastTTL) ~= 'number' or lastTTL < 0 then lastTTL = intervalWindowSec end
-      local levelTTL = lastTTL + 600
-      redis.call('set', muteLevelKey, tostring(level + 1), 'EX', levelTTL)
-
-      redis.call('del', prevDeltaKey)
-      redis.call('del', repeatKey)
-      redis.call('set', lastKey, tostring(now), 'EX', intervalWindowSec)
-
-      return to_resp(true, true, 'stable-delta', math.floor(muteSec))
+      return apply_mute('stable-delta')
     end
   else
     redis.call('del', repeatKey)

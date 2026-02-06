@@ -238,7 +238,7 @@ async function postMessageHandler(req, res) {
   const username = await redisClient.get(KEYS.username(clientId));
   if (!username) return res.status(400).json({ error: 'Username not set' });
 
-  const spamResult = await spamService.check(clientId);
+  const spamResult = await spamService.check(clientId, message);
 
   if (spamResult.rejected) {
     if (spamResult.muted) {
