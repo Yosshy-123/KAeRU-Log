@@ -375,15 +375,15 @@ async function clearMessagesHandler(req, res) {
   const clientId = req.clientId;
   if (!clientId) return res.status(403).json({ error: 'Authentication required', code: 'no_token' });
 
+  if (!(await checkRateLimitMs(redisClient, KEYS.rateClear(clientId), 30000))) {
+    emitUserToast(io, clientId, '削除操作は30秒以上間隔をあけてください');
+    return res.sendStatus(429);
+  }
+
   if (password !== ADMIN_PASS) {
     await safeLogAction({ user: clientId, action: 'InvalidAdminPassword', extra: { roomId } });
     emitUserToast(io, clientId, '管理者パスワードが正しくありません');
     return res.sendStatus(403);
-  }
-
-  if (!(await checkRateLimitMs(redisClient, KEYS.rateClear(clientId), 30000))) {
-    emitUserToast(io, clientId, '削除操作は30秒以上間隔をあけてください');
-    return res.sendStatus(429);
   }
 
   if (!roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(roomId)) return res.sendStatus(400);
