@@ -62,7 +62,8 @@
 ├── services/
 │   └── spamService.js
 ├── src/
-│   └── hop-check.js
+│   ├── hop-check.js
+│   └── render.gs
 ├── utils/
 │   ├── logger.js
 │   ├── redisUtils.js
@@ -76,7 +77,6 @@
 ├── LICENSE
 ├── package.json
 ├── redis.js
-├── render.gs
 ├── render.yaml
 ├── securityHeaders.js
 ├── server.js
