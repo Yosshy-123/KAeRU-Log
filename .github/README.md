@@ -39,22 +39,48 @@
 │   │   ├── favicon-96x96.png
 │   │   └── logo.png
 │   ├── js/
-│   │   ├── main.js
-│   │   └── socket.io.min.js
+│   │   ├── api.js
+│   │   ├── config.js
+│   │   ├── dom.js
+│   │   ├── index.js
+│   │   ├── init.js
+│   │   ├── modal.js
+│   │   ├── render.js
+│   │   ├── room.js
+│   │   ├── services.js
+│   │   ├── socket.io.min.js
+│   │   ├── socket.js
+│   │   ├── state.js
+│   │   ├── toast.js
+│   │   └── utils.js
 │   └── index.html
+├── routes/
+│   ├── apiAdmin.js
+│   ├── apiAuth.js
+│   ├── apiMessages.js
+│   └── apiUsername.js
 ├── services/
 │   └── spamService.js
+├── src/
+│   └── hop-check.js
 ├── utils/
 │   ├── logger.js
 │   ├── redisUtils.js
+│   ├── sanitize.js
 │   ├── socketWrapper.js
+│   ├── time.js
 │   └── tokenBucket.js
-├── hop-check.js
+├── app.js
+├── auth.js
+├── cron.js
 ├── LICENSE
 ├── package.json
+├── redis.js
 ├── render.gs
 ├── render.yaml
-└── server.js
+├── securityHeaders.js
+├── server.js
+└── socket.js
 ```
 
 ---
