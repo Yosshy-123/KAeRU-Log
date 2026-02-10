@@ -368,6 +368,28 @@ textarea {
 	transition: border 0.2s ease, box-shadow 0.2s ease;
 }
 
+.admin-badge {
+	display: inline-block;
+	font-size: 11px;
+	padding: 4px 8px;
+	border-radius: 999px;
+	background: #3b2850;
+	color: #ffdbe1;
+	font-weight: 700;
+	margin-left: 6px;
+	border: 1px solid rgba(255, 255, 255, 0.04);
+	box-shadow: 0 4px 14px rgba(59, 40, 80, 0.35);
+}
+
+.message-bubble.admin {
+  border-color: rgba(108, 140, 255, 0.5);
+  box-shadow: 0 6px 18px rgba(76, 110, 255, 0.08);
+}
+
+.hidden {
+  display: none !important;
+}
+
 @media (max-width: 820px) {
 
 	html,
