@@ -377,6 +377,7 @@ textarea {
     color: #ffdbe1;
     font-weight: 700;
     margin-left: 8px;
+	vertical-align: middle;
     line-height: 1;
     border: 1px solid rgba(255, 255, 255, 0.04);
     box-shadow: 0 4px 14px rgba(59, 40, 80, 0.35);
