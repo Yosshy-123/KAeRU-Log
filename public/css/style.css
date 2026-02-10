@@ -371,7 +371,7 @@ textarea {
 .admin-badge {
 	display: inline-block;
 	font-size: 11px;
-	padding: 4px 8px;
+	padding: 2px 8px;
 	border-radius: 999px;
 	background: #3b2850;
 	color: #ffdbe1;
@@ -379,15 +379,16 @@ textarea {
 	margin-left: 6px;
 	border: 1px solid rgba(255, 255, 255, 0.04);
 	box-shadow: 0 4px 14px rgba(59, 40, 80, 0.35);
+	vertical-align: middle;
 }
 
 .message-bubble.admin {
-  border-color: rgba(108, 140, 255, 0.5);
-  box-shadow: 0 6px 18px rgba(76, 110, 255, 0.08);
+	border-color: rgba(108, 140, 255, 0.5);
+	box-shadow: 0 6px 18px rgba(76, 110, 255, 0.08);
 }
 
 .hidden {
-  display: none !important;
+	display: none !important;
 }
 
 @media (max-width: 820px) {
