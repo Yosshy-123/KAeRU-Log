@@ -44,7 +44,7 @@ function createApiAuthRouter({ redisClient, safeLogAction }) {
 
     await safeLogAction({ user: clientId, action: 'issueToken' });
 
-    res.json({ token, clientId, username });
+    res.json({ token, username });
   });
 
   return router;
