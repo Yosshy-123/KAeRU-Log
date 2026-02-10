@@ -3,11 +3,28 @@ import { state } from './state.js';
 import { selectAll, isScrolledToBottom } from './utils.js';
 import { changeChatRoom } from './room.js';
 
-import { openProfileModal, closeProfileModal, openAdminModal, closeAdminModal, addEnterKeyForModal } from './modal.js';
-import { sendMessage, saveProfile, deleteAllMessages } from './services.js';
+import {
+  openProfileModal,
+  closeProfileModal,
+  openAdminModal,
+  closeAdminModal,
+  addEnterKeyForModal,
+} from './modal.js';
+
+import {
+  sendMessage,
+  saveProfile,
+  deleteAllMessages,
+  adminLogin,
+  adminLogout,
+  getAdminStatus,
+  loadHistory,
+} from './services.js';
+
 import { startConnection } from './socket.js';
 import { obtainToken } from './api.js';
 
+/* ----------------- Room input ----------------- */
 export function setupRoomInput() {
   if (!elements.roomIdInput) return;
 
@@ -23,6 +40,7 @@ export function setupRoomInput() {
   });
 }
 
+/* --------------- Event listeners -------------- */
 export function setupEventListeners() {
   elements.sendMessageButton?.addEventListener('click', () => sendMessage());
 
@@ -41,12 +59,24 @@ export function setupEventListeners() {
   elements.closeProfileButton?.addEventListener('click', closeProfileModal);
   elements.saveProfileButton?.addEventListener('click', saveProfile);
 
-  elements.openAdminButton?.addEventListener('click', openAdminModal);
-  elements.closeAdminButton?.addEventListener('click', closeAdminModal);
+  elements.openAdminButton?.addEventListener('click', async () => {
+    await getAdminStatus();
+    openAdminModal();
+  });
 
-  elements.clearMessagesButton?.addEventListener('click', () => {
-    deleteAllMessages();
-    closeAdminModal();
+  elements.closeAdminButton?.addEventListener('click', closeAdminModal);
+  elements.closeAdminButton2?.addEventListener('click', closeAdminModal);
+
+  elements.adminLoginButton?.addEventListener('click', async () => {
+    await adminLogin();
+  });
+
+  elements.adminLogoutButton?.addEventListener('click', async () => {
+    await adminLogout();
+  });
+
+  elements.clearMessagesButton?.addEventListener('click', async () => {
+    await deleteAllMessages();
   });
 
   elements.joinRoomButton?.addEventListener('click', () => {
@@ -57,10 +87,19 @@ export function setupEventListeners() {
     state.isAutoScroll = isScrolledToBottom();
   });
 
+  addEnterKeyForModal(elements.adminModal, async () => {
+    if (!state.isAdmin) {
+      await adminLogin();
+    } else {
+      await deleteAllMessages();
+    }
+  });
+
   addEnterKeyForModal(elements.profileModal, saveProfile);
-  addEnterKeyForModal(elements.adminModal, deleteAllMessages, closeAdminModal);
 }
 
+/* ------------------ Initialize -----------------
+*/
 export async function initialize() {
   try {
     if (!state.myToken) {
@@ -68,19 +107,42 @@ export async function initialize() {
         await obtainToken();
       } catch (e) {
         openProfileModal();
+        return;
       }
     }
 
-    if (state.myToken) {
-      startConnection().catch(() => {});
+    try {
+      await getAdminStatus();
+    } catch (e) {
+      state.isAdmin = false;
+    }
+
+    try {
+      startConnection().catch((err) => {
+        console.warn('socket start error', err);
+      });
+    } catch (e) {
+      console.warn('startConnection threw', e);
+    }
+
+    try {
+      if (state.roomId) {
+        await loadHistory();
+      }
+    } catch (e) {
+      console.warn('loadHistory failed', e);
     }
 
     if (state.pendingMessage && state.myToken) {
       const pm = state.pendingMessage;
       state.pendingMessage = null;
-      sendMessage(pm);
+      try {
+        await sendMessage(pm);
+      } catch (e) {
+        console.warn('sending pending message failed', e);
+      }
     }
   } catch (e) {
-    console.warn('initialization error', e);
+    console.warn('initialize error', e);
   }
 }

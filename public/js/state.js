@@ -16,4 +16,6 @@ export const state = {
 
   authPromise: null,
   lastAuthAttempt: 0,
+
+  isAdmin: false,
 };

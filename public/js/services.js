@@ -3,7 +3,7 @@ import { state } from './state.js';
 import { elements } from './dom.js';
 import { fetchWithAuth, obtainToken } from './api.js';
 import { showToast } from './toast.js';
-import { openProfileModal, closeProfileModal } from './modal.js';
+import { openProfileModal, closeProfileModal, refreshAdminModalUI, closeAdminModal } from './modal.js';
 import { focusInput, scrollBottom } from './utils.js';
 import { createMessage } from './render.js';
 import { startConnection } from './socket.js';
@@ -41,28 +41,38 @@ export async function sendMessage(overridePayload = null) {
     return;
   }
 
-  const text = overridePayload?.message ?? textarea.value.trim();
-  if (!text) {
-    state.isSending = false;
-    return;
-  }
+  if (button.disabled) return;
 
   button.disabled = true;
-  button.textContent = '送信中…';
+
+  let payload = overridePayload;
+
+  if (!payload) {
+    const message = textarea.value.trim();
+    if (!message) {
+      button.disabled = false;
+      state.isSending = false;
+      return;
+    }
+
+    payload = {
+      roomId: state.roomId,
+      message,
+      seed: state.mySeed,
+    };
+
+    textarea.value = '';
+  }
 
   try {
-    const payload = overridePayload ?? { roomId: state.roomId, message: text, seed: state.mySeed };
-
     if (!state.myToken) {
-      state.pendingMessage = payload;
       try {
         await obtainToken();
       } catch (e) {
         showToast('認証に失敗しました');
-        openProfileModal();
+        button.disabled = false;
+        state.isSending = false;
         return;
-      } finally {
-        state.pendingMessage = null;
       }
     }
 
@@ -74,51 +84,91 @@ export async function sendMessage(overridePayload = null) {
 
     if (!res) {
       showToast('送信できませんでした');
-      return;
-    }
-
-    if (res.status === 401 || res.status === 403) {
-      showToast('認証が必要です');
-      state.myToken = null;
-      localStorage.removeItem('chatToken');
-      openProfileModal();
+      button.disabled = false;
+      state.isSending = false;
       return;
     }
 
     if (res.status === 429) {
-      showToast('送信が制限されています（スパム/レート制限）');
+      showToast('送信制限中です。しばらくお待ちください');
+      button.disabled = false;
+      state.isSending = false;
       return;
     }
 
     if (!res.ok) {
       showToast('送信に失敗しました');
+      button.disabled = false;
+      state.isSending = false;
       return;
     }
 
-    if (!overridePayload) {
-      textarea.value = '';
-      focusInput();
-    }
-  } catch (e) {
-    console.error(e);
-    showToast('通信エラーが発生しました');
-  } finally {
+    state.isSending = false;
     button.disabled = false;
-    button.textContent = '送信';
+  } catch (e) {
+    console.error('sendMessage error', e);
+    showToast('通信エラーが発生しました');
+    button.disabled = false;
     state.isSending = false;
   }
 }
 
 export async function saveProfile() {
-  const v = (elements.profileNameInput?.value || '').trim();
+  const name = elements.profileNameInput?.value.trim();
 
-  if (!v) {
-    showToast('ユーザー名は空です');
+  if (!name) {
+    showToast('ユーザー名を入力してください');
     return;
   }
-  if (v.length > 24) {
+
+  if (name.length > 24) {
     showToast('ユーザー名は24文字以内にしてください');
     return;
+  }
+
+  if (name === state.myName) {
+    closeProfileModal();
+    return;
+  }
+
+  try {
+    const res = await fetchWithAuth(`${SERVER_URL}/api/username`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: name }),
+    });
+
+    if (!res) {
+      showToast('保存できませんでした');
+      return;
+    }
+
+    if (res.status === 429) {
+      showToast('変更制限中です。しばらくお待ちください');
+      return;
+    }
+
+    if (!res.ok) {
+      showToast('保存に失敗しました');
+      return;
+    }
+
+    state.myName = name;
+    localStorage.setItem('chat_username', name);
+
+    closeProfileModal();
+  } catch (e) {
+    console.error('saveProfile error', e);
+    showToast('通信エラーが発生しました');
+  }
+}
+
+export async function adminLogin() {
+  const password = elements.adminPasswordInput?.value.trim();
+
+  if (!password) {
+    showToast('パスワードを入力してください');
+    return false;
   }
 
   try {
@@ -127,73 +177,131 @@ export async function saveProfile() {
         await obtainToken();
       } catch (e) {
         showToast('認証に失敗しました');
-        return;
+        return false;
       }
     }
-
-    const res = await fetchWithAuth(`${SERVER_URL}/api/username`, {
+    const res = await fetchWithAuth(`${SERVER_URL}/api/admin/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: v }),
+      body: JSON.stringify({ password }),
     });
 
+    if (!res) {
+      showToast('ログインできませんでした');
+      return false;
+    }
+
+    if (res.status === 401 || res.status === 403) {
+      showToast('パスワードが正しくありません');
+      return false;
+    }
+
     if (!res.ok) {
-      if (res.status === 401 || res.status === 403) {
-        showToast('認証が必要です');
-        state.myToken = null;
-        localStorage.removeItem('chatToken');
-        openProfileModal();
-        return;
-      }
-      if (res.status === 429) {
-        showToast('ユーザー名変更はしばらくお待ちください');
-        return;
-      }
-      showToast('プロフィール保存に失敗しました');
+      showToast('ログインに失敗しました');
+      return false;
+    }
+
+    const data = await res.json();
+
+    if (data.admin) {
+      state.isAdmin = true;
+      refreshAdminModalUI();
+      showToast('管理者としてログインしました');
+      return true;
+    } else {
+      showToast('管理者権限の確認に失敗しました');
+      return false;
+    }
+  } catch (e) {
+    console.error('adminLogin error', e);
+    showToast('通信エラーが発生しました');
+    return false;
+  }
+}
+
+export async function adminLogout() {
+  try {
+    const res = await fetchWithAuth(`${SERVER_URL}/api/admin/logout`, {
+      method: 'POST',
+    });
+
+    if (!res) {
+      showToast('ログアウトできませんでした');
       return;
     }
 
-    state.myName = v;
-    localStorage.setItem('chat_username', state.myName);
-
-    closeProfileModal();
-    showToast('プロフィールを保存しました');
-    focusInput();
-
-    if (!state.socket || !state.socket.connected) {
-      startConnection().catch(() => {});
+    if (!res.ok) {
+      showToast('ログアウトに失敗しました');
+      return;
     }
 
-    if (state.pendingMessage) {
-      const pm = state.pendingMessage;
-      state.pendingMessage = null;
-      sendMessage(pm);
-    }
+    state.isAdmin = false;
+    refreshAdminModalUI();
   } catch (e) {
-    console.error(e);
+    console.error('adminLogout error', e);
     showToast('通信エラーが発生しました');
   }
 }
 
 export async function deleteAllMessages() {
-  const password = elements.adminPasswordInput?.value || '';
-  if (!password) {
-    showToast('パスワードを入力してください');
-    return;
-  }
-
   try {
-    const res = await fetchWithAuth(`${SERVER_URL}/api/clear`, {
+    const res = await fetchWithAuth(`${SERVER_URL}/api/admin/clear/${encodeURIComponent(state.roomId)}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password, roomId: state.roomId }),
     });
+
+    if (!res) {
+      showToast('削除に失敗しました');
+      return;
+    }
+
+    if (res.status === 401 || res.status === 403) {
+      state.isAdmin = false;
+      refreshAdminModalUI();
+      showToast('管理者セッションが無効です。再ログインしてください');
+      return;
+    }
 
     if (!res.ok) {
       showToast('削除に失敗しました');
+      return;
     }
+
+    showToast('全メッセージを削除しました');
+    closeAdminModal();
   } catch (e) {
-    console.error(e);
+    console.error('deleteAllMessages error', e);
     showToast('通信エラーが発生しました');
+  }
+}
+
+export async function getAdminStatus() {
+  try {
+    if (!state.myToken) {
+      state.isAdmin = false;
+      refreshAdminModalUI();
+      return false;
+    }
+
+    const res = await fetchWithAuth(`${SERVER_URL}/api/admin/status`, {
+      method: 'GET',
+      cache: 'no-store',
+    });
+
+    if (!res || !res.ok) {
+      state.isAdmin = false;
+      refreshAdminModalUI();
+      return false;
+    }
+
+    const data = await res.json().catch(() => null);
+    state.isAdmin = !!data?.admin;
+
+    refreshAdminModalUI();
+    return state.isAdmin;
+  } catch (e) {
+    console.error('getAdminStatus error', e);
+    state.isAdmin = false;
+    refreshAdminModalUI();
+    return false;
   }
 }

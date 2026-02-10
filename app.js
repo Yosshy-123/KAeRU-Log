@@ -35,6 +35,8 @@ function createRequireSocketSession(redisClient, safeLogAction) {
     }
 
     req.clientId = clientId;
+    req.token = token;
+
     next();
   };
 }
@@ -125,7 +127,7 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
 
   // admin
   app.use(
-    '/api',
+    '/api/admin',
     requireSocketSession,
     createApiAdminRouter({
       redisClient,

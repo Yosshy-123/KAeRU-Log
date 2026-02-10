@@ -15,9 +15,19 @@ export const elements = {
 
   adminModal: $('#adminModal'),
   openAdminButton: $('#openAdminButton'),
-  closeAdminButton: $('#closeAdminButton'),
+
   adminPasswordInput: $('#adminPasswordInput'),
+  adminLoginButton: $('#adminLoginButton'),
+  adminLogoutButton: $('#adminLogoutButton'),
+
+  closeAdminButton: $('#closeAdminButton'),
+  closeAdminButton2: $('#closeAdminButton2'),
+
   clearMessagesButton: $('#clearMessagesButton'),
+
+  adminLoginSection: $('#adminLoginSection'),
+  adminPanelSection: $('#adminPanelSection'),
+  adminModalTitle: $('#adminModalTitle'),
 
   connectionText: $('#connectionText'),
   connectionIndicator: $('#connectionIndicator'),

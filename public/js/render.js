@@ -13,6 +13,7 @@ export function createMessage(msg) {
 
   const bubble = document.createElement('div');
   bubble.className = 'message-bubble';
+  if (msg.admin === true) bubble.classList.add('admin');
 
   const meta = document.createElement('div');
   meta.className = 'message-meta';
@@ -20,6 +21,13 @@ export function createMessage(msg) {
   const nameEl = document.createElement('div');
   nameEl.className = 'message-username';
   nameEl.textContent = msg.username;
+
+  if (msg.admin === true) {
+    const badge = document.createElement('span');
+    badge.className = 'admin-badge';
+    badge.textContent = '管理者';
+    nameEl.appendChild(badge);
+  }
 
   const dot = document.createElement('span');
   dot.textContent = '•';

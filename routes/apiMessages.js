@@ -29,7 +29,13 @@ function createApiMessagesRouter({ redisClient, io, safeLogAction, emitUserToast
       })
       .filter(Boolean);
 
-    res.json(messages.map(({ username, message, time, seed }) => ({ username, message, time, seed })));
+    res.json(
+      messages.map(({ username, message, time, seed, admin }) => {
+        const out = { username, message, time, seed };
+        if (admin === true) out.admin = true;
+        return out;
+      })
+    );
   });
 
   // POST /api/messages
@@ -79,6 +85,20 @@ function createApiMessagesRouter({ redisClient, io, safeLogAction, emitUserToast
       return res.sendStatus(429);
     }
 
+    // --- admin判定 ---
+    let isAdmin = false;
+    try {
+      const token = req.token;
+      if (token) {
+        const adminOwnerClientId = await redisClient.get(KEYS.adminSession(token));
+        if (adminOwnerClientId && adminOwnerClientId === clientId) {
+          isAdmin = true;
+        }
+      }
+    } catch (err) {
+      await safeLogAction({ user: clientId, action: 'adminCheckError', extra: { message: err.message } });
+    }
+
     const storedMessage = {
       username,
       message: escapeHTML(message),
@@ -86,13 +106,17 @@ function createApiMessagesRouter({ redisClient, io, safeLogAction, emitUserToast
       seed,
     };
 
+    if (isAdmin) {
+      storedMessage.admin = true;
+    }
+
     await pushAndTrimList(redisClient, KEYS.messages(roomId), JSON.stringify(storedMessage), 100);
 
     io.to(roomId).emit('newMessage', storedMessage);
 
     await safeLogAction({
       user: clientId,
-      action: 'sendMessage',
+      action: isAdmin ? 'sendMessageAdmin' : 'sendMessage',
       extra: { roomId, message: storedMessage.message },
     });
 

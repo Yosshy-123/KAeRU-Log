@@ -67,16 +67,25 @@
   </div>
 </div>
 
-<div id="adminModal" class="modal-overlay">
+<div id="adminModal" class="modal-overlay" aria-hidden="true">
   <div class="modal-dialog">
-    <h3>管理パネル</h3>
-    <div class="form-field">
+    <h3 id="adminModalTitle">管理パネル</h3>
+
+    <div id="adminLoginSection" class="form-field">
       <label for="adminPasswordInput">パスワード</label>
       <input id="adminPasswordInput" type="password" placeholder="パスワードを入力">
+      <div class="modal-actions">
+        <button id="adminLoginButton" class="btn accent">ログイン</button>
+        <button id="closeAdminButton" class="btn">閉じる</button>
+      </div>
     </div>
-    <div class="modal-actions">
-      <button id="closeAdminButton" class="btn">閉じる</button>
-      <button id="clearMessagesButton" class="btn danger">全メッセージ削除</button>
+
+    <div id="adminPanelSection" class="form-field hidden">
+      <div class="modal-actions">
+        <button id="closeAdminButton2" class="btn">閉じる</button>
+        <button id="clearMessagesButton" class="btn danger">全メッセージ削除</button>
+        <button id="adminLogoutButton" class="btn">ログアウト</button>
+      </div>
     </div>
   </div>
 </div>
