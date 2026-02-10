@@ -369,16 +369,15 @@ textarea {
 }
 
 .admin-badge {
-    display: inline-block;
-    font-size: 8.8px;
-    padding: 3.2px 6.4px;
-    border-radius: 799.2px;
-    background: #3b2850;
-    color: #ffdbe1;
-    font-weight: 700;
-    margin-left: 6.4px;
-    border: 1px solid rgba(255, 255, 255, 0.04);
-    box-shadow: 0 3.2px 11.2px rgba(59, 40, 80, 0.35);
+  display: inline-block;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #3b2850;
+  color: #ffdbe1;
+  font-weight: 700;
+  margin-left: 8px;
+  vertical-align: middle;
 }
 
 .message-bubble.admin {
