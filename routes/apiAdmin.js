@@ -97,6 +97,11 @@ function createApiAdminRouter({ redisClient, io, safeLogAction, emitUserToast, e
 
     if (!clientId || !token) return res.status(403).json({ error: 'Authentication required', code: 'no_token' });
 
+    if (!(await checkRateLimitMs(redisClient, KEYS.rateClear(clientId), 30000))) {
+      emitUserToast(clientId, '削除操作は30秒以上間隔をあけてください');
+      return res.sendStatus(429);
+    }
+
     const adminOwnerClientId = await redisClient.get(KEYS.adminSession(token));
     if (!adminOwnerClientId) {
       await safeLogAction({ user: clientId, action: 'UnauthorizedClear', extra: { roomId } });
