@@ -66,6 +66,9 @@ function createToastEmitters(io) {
 function createApp({ redisClient, io, adminPass, frontendUrl }) {
   const app = express();
 
+  // Render などのリバースプロキシ環境用
+  app.set('trust proxy', 2);
+
   app.use(express.json({ limit: '100kb' }));
 
   // CORS
@@ -79,9 +82,6 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
 
   // セキュリティヘッダ
   app.use(securityHeaders(frontendUrl));
-
-  // Render などのリバースプロキシ環境用
-  app.set('trust proxy', 2);
 
   // safe logger
   async function safeLogAction(payload) {
@@ -105,7 +105,6 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
   app.use(
     '/api',
     requireSocketSession,
-    asyncHandler(async (req, res, next) => next()),
     createApiMessagesRouter({
       redisClient,
       io,
@@ -149,7 +148,7 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
   app.use((err, req, res, next) => {
     console.error(`[${new Date().toISOString()}] Error:`, err);
 
-    if (res.headersSent) return next(err);
+    if (res.headersSent) return;
 
     const status = err.status || 500;
     const message = err.message || 'Internal Server Error';
