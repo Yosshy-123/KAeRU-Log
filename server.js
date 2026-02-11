@@ -4,7 +4,6 @@ require('dotenv').config();
 
 // -------------------- モジュール --------------------
 const http = require('http');
-const cron = require('node-cron');
 
 const createApp = require('./app');
 const createSocketServer = require('./socket');
