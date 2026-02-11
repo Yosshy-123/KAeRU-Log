@@ -25,7 +25,7 @@ export function createMessage(msg) {
   if (msg.admin === true) {
     const badge = document.createElement('span');
     badge.className = 'admin-badge';
-    badge.textContent = '管理者';
+    badge.textContent = 'ADMIN';
     nameEl.appendChild(badge);
   }
 
