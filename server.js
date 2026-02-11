@@ -9,7 +9,6 @@ const cron = require('node-cron');
 const createApp = require('./app');
 const createSocketServer = require('./socket');
 const { createRedisClient } = require('./redis');
-const { registerMonthlyResetCron, monthlyRedisReset } = require('./cron');
 
 // -------------------- 環境変数 --------------------
 const PORT = process.env.PORT || 3000;
@@ -50,13 +49,6 @@ const app = createApp({
 httpServer.on('request', app);
 
 // -------------------- 起動 --------------------
-(async () => {
-  try {
-    await monthlyRedisReset(redisClient);
-    registerMonthlyResetCron(cron, redisClient);
-  } catch (err) {
-    console.error('Monthly reset check failed', err);
-  } finally {
-    httpServer.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-  }
-})();
+httpServer.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
