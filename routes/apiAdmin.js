@@ -15,8 +15,8 @@ function createApiAdminRouter({ redisClient, io, safeLogAction, emitUserToast, e
 
     if (!clientId || !token) return res.status(403).json({ error: 'Authentication required', code: 'no_token' });
 
-    if (!(await checkRateLimitMs(redisClient, KEYS.rateClear(clientId), 30000))) {
-      emitUserToast(clientId, '操作には30秒以上間隔をあけてください');
+    if (!(await checkRateLimitMs(redisClient, KEYS.rateAdminLogin(clientId), 30000))) {
+      emitUserToast(clientId, 'ログイン操作には30秒以上間隔をあけてください');
       return res.sendStatus(429);
     }
 
