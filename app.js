@@ -13,10 +13,6 @@ const { validateAuthToken } = require('./auth');
 const rawLogAction = require('./utils/logger');
 const KEYS = require('./lib/redisKeys');
 
-// -------------------- async handler --------------------
-const asyncHandler = (fn) => (req, res, next) =>
-  Promise.resolve(fn(req, res, next)).catch(next);
-
 // -------------------- REST セッション用ミドルウェア --------------------
 function createRequireSocketSession(redisClient, safeLogAction) {
   return async function requireSocketSession(req, res, next) {
