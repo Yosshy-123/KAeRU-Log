@@ -15,7 +15,7 @@ function createApiAuthRouter({ redisClient, safeLogAction }) {
 
   router.post('/auth', async (req, res) => {
     const ip = req.ip;
-    const rateKey = KEYS.tokenBucketAuthIp(ip) + ':' + crypto.createHash('md5').update(ip).digest('hex').slice(0, 8);
+    const rateKey = KEYS.tokenBucketAuthIp(ip) + ':' + crypto.createHash('sha256').update(ip).digest('hex').slice(0, 8);
 
     const result = await tokenBucket.allow(rateKey, {
       capacity: 3,
