@@ -147,7 +147,7 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
   app.use((err, req, res, next) => {
     logger.error(`[${new Date().toISOString()}] Error:`, err);
 
-    if (res.headersSent) return next(err);
+    if (res.headersSent) return;
 
     const status = err.status || 500;
     const message = err.message || 'Internal Server Error';
