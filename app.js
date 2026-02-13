@@ -73,6 +73,9 @@ function createToastEmitters(io) {
 function createApp({ redisClient, io, adminPass, frontendUrl }) {
   const app = express();
 
+  // Render などのリバースプロキシ環境用
+  app.set('trust proxy', true);
+
   app.disable('x-powered-by');
 
   app.use(express.json({ limit: '100kb' }));
