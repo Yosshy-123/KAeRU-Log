@@ -15,12 +15,11 @@ function createApiAuthRouter({ redisClient, safeLogAction }) {
 
   router.post('/auth', async (req, res) => {
     const ip = req.ip;
-    const userAgent = req.headers['user-agent'] || '';
-    const rateKey = KEYS.tokenBucketAuthIp(ip) + ':' + crypto.createHash('md5').update(userAgent).digest('hex').slice(0, 8);
+    const rateKey = KEYS.tokenBucketAuthIp(ip) + ':' + crypto.createHash('md5').update(ip).digest('hex').slice(0, 8);
 
     const result = await tokenBucket.allow(rateKey, {
-      capacity: 5,
-      refillPerSec: 5 / (24 * 60 * 60),
+      capacity: 3,
+      refillPerSec: 3 / (24 * 60 * 60),
     });
 
     if (!result.allowed) {

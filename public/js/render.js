@@ -41,7 +41,7 @@ export function createMessage(msg) {
 
   const text = document.createElement('div');
   text.className = 'message-text';
-  text.textContent = msg.message;
+  text.innerHTML = msg.message;
 
   bubble.append(meta, text);
   wrap.append(avatar, bubble);
