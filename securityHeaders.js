@@ -1,3 +1,5 @@
+'use strict';
+
 function securityHeaders(frontendUrl) {
   const fe = frontendUrl || "'self'";
 
@@ -14,3 +16,5 @@ function securityHeaders(frontendUrl) {
     next();
   };
 }
+
+module.exports = securityHeaders;
