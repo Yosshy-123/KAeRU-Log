@@ -2,8 +2,6 @@
 
 const express = require('express');
 const cors = require('cors');
-const validator = require('validator');
-const winston = require('winston');
 
 const securityHeaders = require('./securityHeaders');
 const createApiAuthRouter = require('./routes/apiAuth');
@@ -43,27 +41,6 @@ function createRequireSocketSession(redisClient, safeLogAction) {
   };
 }
 
-function createToastEmitters(io) {
-  function emitUserToast(clientId, message) {
-    const roomName = KEYS.userRoom(clientId);
-    const room = io.sockets.adapter.rooms.get(roomName);
-    if (!room || room.size === 0) return;
-
-    io.to(roomName).emit('toast', { scope: 'user', message, time: Date.now() });
-  }
-
-  function emitRoomToast(roomId, message) {
-    if (!roomId) return;
-
-    const room = io.sockets.adapter.rooms.get(roomId);
-    if (!room || room.size === 0) return;
-
-    io.to(roomId).emit('toast', { scope: 'room', message, time: Date.now() });
-  }
-
-  return { emitUserToast, emitRoomToast };
-}
-
 function createApp({ redisClient, io, adminPass, frontendUrl }) {
   const app = express();
 
@@ -90,42 +67,39 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
     }
   }
 
-  const { emitUserToast, emitRoomToast } = createToastEmitters(io);
+  const requireSocketSession = createRequireSocketSession(redisClient, safeLogAction);
 
   app.use('/api/auth', createApiAuthRouter({ redisClient, safeLogAction }));
 
-  const requireSocketSession = createRequireSocketSession(redisClient, safeLogAction);
+  app.use('/api', requireSocketSession);
 
   app.use(
-    '/api/messages',
-    requireSocketSession,
+    '/api',
     createApiMessagesRouter({
       redisClient,
       io,
       safeLogAction,
-      emitUserToast,
+      emitUserToast: () => {},
     })
   );
 
   app.use(
-    '/api/username',
-    requireSocketSession,
+    '/api',
     createApiUsernameRouter({
       redisClient,
       safeLogAction,
-      emitUserToast,
+      emitUserToast: () => {},
     })
   );
 
   app.use(
     '/api/admin',
-    requireSocketSession,
     createApiAdminRouter({
       redisClient,
       io,
       safeLogAction,
-      emitUserToast,
-      emitRoomToast,
+      emitUserToast: () => {},
+      emitRoomToast: () => {},
       adminPass,
     })
   );
@@ -139,9 +113,7 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
   });
 
   app.use((err, req, res, next) => {
-    if (res.headersSent) {
-      return next(err);
-    }
+    if (res.headersSent) return next(err);
 
     const status = err.status || 500;
     const message = err.message || 'Internal Server Error';
