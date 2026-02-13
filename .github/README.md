@@ -62,7 +62,6 @@
 ├── services/
 │   └── spamService.js
 ├── src/
-│   ├── hop-check.js
 │   └── render.gs
 ├── utils/
 │   ├── logger.js

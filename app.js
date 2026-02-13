@@ -73,7 +73,7 @@ function createToastEmitters(io) {
 function createApp({ redisClient, io, adminPass, frontendUrl }) {
   const app = express();
 
-  app.set('trust proxy', 2);
+  app.disable('x-powered-by');
 
   app.use(express.json({ limit: '100kb' }));
 

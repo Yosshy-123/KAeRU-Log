@@ -45,7 +45,7 @@ module.exports = function createSpamService(redis, logger, KEYS, config = {}) {
   }
 
   function sha1Hex(str) {
-    return crypto.createHash('sha1').update(String(str)).digest('hex');
+    return crypto.createHash('sha256').update(String(str)).digest('hex');
   }
 
   function validKey(k) {
