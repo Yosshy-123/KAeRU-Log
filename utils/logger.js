@@ -1,4 +1,4 @@
-module.exports = async function rawLogAction(redisClient, { user, action, extra = {} } = {}) {
+module.exports = async function (redisClient, { user, action, extra = {} } = {}) {
   if (!action) throw new Error("rawLogAction: 'action' must be specified");
 
   // timestamp in JST for readability

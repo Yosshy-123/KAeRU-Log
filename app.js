@@ -15,12 +15,6 @@ const { validateAuthToken } = require('./auth');
 const rawLogAction = require('./utils/logger');
 const KEYS = require('./lib/redisKeys');
 
-const logger = winston.createLogger({
-  level: 'info',
-  format: winston.format.json(),
-  transports: [new winston.transports.Console()],
-});
-
 function createRequireSocketSession(redisClient, safeLogAction) {
   return async function requireSocketSession(req, res, next) {
     const token = req.headers['authorization']?.replace(/^Bearer\s+/i, '');
@@ -93,7 +87,6 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
   async function safeLogAction(payload) {
     try {
       await rawLogAction(redisClient, payload);
-      logger.info(payload);
     } catch (err) {
       console.error('[safeLogAction] log failed', err);
     }
@@ -148,8 +141,6 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
   });
 
   app.use((err, req, res, next) => {
-    logger.error(`[${new Date().toISOString()}] Error:`, err);
-
     if (res.headersSent) return;
 
     const status = err.status || 500;
