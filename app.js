@@ -137,8 +137,11 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
   );
 
   app.use(express.static(`${__dirname}/public`));
-  app.get(/^\/(?!api\/).*/, (req, res) => {
-    res.sendFile(`${__dirname}/public/index.html`);
+
+  app.get(/^\/(?!api\/).*/, (req, res, next) => {
+    res.sendFile(`${__dirname}/public/index.html`, (err) => {
+      if (err) return next(err);
+    });
   });
 
   app.use((err, req, res, next) => {

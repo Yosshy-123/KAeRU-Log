@@ -45,9 +45,10 @@ const app = createApp({
   frontendUrl: FRONTEND_URL,
 });
 
-httpServer.on('request', app);
+// Attach express app to http server
+httpServer.on('request', (req, res) => app(req, res));
 
 // -------------------- 起動 --------------------
 httpServer.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
