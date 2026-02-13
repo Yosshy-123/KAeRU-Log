@@ -7,8 +7,8 @@ module.exports = {
       await redisClient.set(key, String(now), 'PX', windowMs);
       return true;
     } catch (err) {
-      // On redis error, allow (fail-open)
-      return true;
+      console.error('checkRateLimitMs error', err);
+      return false;
     }
   },
 
@@ -22,6 +22,7 @@ module.exports = {
       }
       return value;
     } catch (err) {
+      console.error('getOrResetByTTLSec error', err);
       return defaultValue;
     }
   },
@@ -36,8 +37,8 @@ module.exports = {
       await pipeline.exec();
       return true;
     } catch (err) {
-      // fail-open
-      return true;
+      console.error('checkCountLimitSec error', err);
+      return false;
     }
   },
 };

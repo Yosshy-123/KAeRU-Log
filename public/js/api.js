@@ -1,6 +1,14 @@
 import { SERVER_URL, AUTH_RETRY_COOLDOWN_MS } from './config.js';
 import { state } from './state.js';
 
+async function fetchWithTimeout(url, opts = {}, timeout = 10000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  const response = await fetch(url, { ...opts, signal: controller.signal });
+  clearTimeout(id);
+  return response;
+}
+
 export async function obtainToken() {
   if (state.authPromise) return state.authPromise;
 
@@ -14,7 +22,7 @@ export async function obtainToken() {
     const reqBody = {};
     if (state.myName) reqBody.username = state.myName;
 
-    const res = await fetch(`${SERVER_URL}/api/auth`, {
+    const res = await fetchWithTimeout(`${SERVER_URL}/api/auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(reqBody),
@@ -55,7 +63,7 @@ export async function fetchWithAuth(url, opts = {}, retry = true) {
     opts.headers['Authorization'] = `Bearer ${state.myToken}`;
   }
 
-  const res = await fetch(url, opts);
+  const res = await fetchWithTimeout(url, opts);
 
   if ((res.status === 401 || res.status === 403) && retry) {
     let code = null;

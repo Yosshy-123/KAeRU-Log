@@ -52,9 +52,6 @@ export function closeProfileModal() {
   closeModal(elements.profileModal);
 }
 
-/**
- * 管理モーダルUI切り替え
- */
 export function refreshAdminModalUI() {
   if (!elements.adminModal) return;
 

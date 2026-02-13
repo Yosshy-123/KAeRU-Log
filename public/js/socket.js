@@ -1,7 +1,7 @@
 import { SERVER_URL } from './config.js';
 import { state } from './state.js';
 import { elements } from './dom.js';
-import { setConnectionState, scrollBottom, focusInput } from './utils.js';
+import { setConnectionState, scrollBottom, focusInput, validateRoomId } from './utils.js';
 import { showServerToast } from './toast.js';
 import { createMessage } from './render.js';
 import { loadHistory } from './services.js';
@@ -10,7 +10,7 @@ import { openProfileModal } from './modal.js';
 
 export function joinRoom() {
   if (!state.socket) return;
-  if (!state.roomId || !/^[a-zA-Z0-9_-]{1,32}$/.test(state.roomId)) return;
+  if (!state.roomId || !validateRoomId(state.roomId)) return;
   state.socket.emit('joinRoom', { roomId: state.roomId });
 }
 
@@ -25,6 +25,7 @@ export function createSocket() {
   state.socket = io(SERVER_URL, {
     auth: { token: state.myToken || '' },
     transports: ['websocket'],
+    secure: true,
   });
 
   state.socket.on('connect', () => {
@@ -48,12 +49,20 @@ export function createSocket() {
   state.socket.on('clearMessages', () => {
     state.messages = [];
     if (elements.messageList) elements.messageList.innerHTML = '';
+    showServerToast('メッセージがクリアされました');
+  });
+
+  state.socket.on('error', (err) => {
+    console.error('Socket error:', err);
+    showServerToast('エラーが発生しました: ' + (err.message || '不明'));
   });
 
   state.socket.on('toast', (data) => {
-    if (!data || typeof data !== 'object') return;
-    if (!data.message) return;
-    showServerToast(data.message);
+    if (data.scope === 'user') {
+      showToast(data.message);
+    } else if (data.scope === 'room') {
+      showServerToast(data.message);
+    }
   });
 
   state.socket.on('roomUserCount', (count) => {

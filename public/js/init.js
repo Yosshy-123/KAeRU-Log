@@ -24,7 +24,6 @@ import {
 import { startConnection } from './socket.js';
 import { obtainToken } from './api.js';
 
-/* ----------------- Room input ----------------- */
 export function setupRoomInput() {
   if (!elements.roomIdInput) return;
 
@@ -40,7 +39,6 @@ export function setupRoomInput() {
   });
 }
 
-/* --------------- Event listeners -------------- */
 export function setupEventListeners() {
   elements.sendMessageButton?.addEventListener('click', () => sendMessage());
 
@@ -53,6 +51,11 @@ export function setupEventListeners() {
         sendMessage();
       }
     });
+
+    elements.messageTextarea.addEventListener('input', () => {
+      elements.messageTextarea.style.height = 'auto';
+      elements.messageTextarea.style.height = `${elements.messageTextarea.scrollHeight}px`;
+    });
   }
 
   elements.openProfileButton?.addEventListener('click', openProfileModal);
@@ -63,21 +66,12 @@ export function setupEventListeners() {
     await getAdminStatus();
     openAdminModal();
   });
-
   elements.closeAdminButton?.addEventListener('click', closeAdminModal);
   elements.closeAdminButton2?.addEventListener('click', closeAdminModal);
 
-  elements.adminLoginButton?.addEventListener('click', async () => {
-    await adminLogin();
-  });
-
-  elements.adminLogoutButton?.addEventListener('click', async () => {
-    await adminLogout();
-  });
-
-  elements.clearMessagesButton?.addEventListener('click', async () => {
-    await deleteAllMessages();
-  });
+  elements.adminLoginButton?.addEventListener('click', adminLogin);
+  elements.adminLogoutButton?.addEventListener('click', adminLogout);
+  elements.clearMessagesButton?.addEventListener('click', deleteAllMessages);
 
   elements.joinRoomButton?.addEventListener('click', () => {
     changeChatRoom(elements.roomIdInput.value.trim());
@@ -98,8 +92,6 @@ export function setupEventListeners() {
   addEnterKeyForModal(elements.profileModal, saveProfile);
 }
 
-/* ------------------ Initialize -----------------
-*/
 export async function initialize() {
   try {
     if (!state.myToken) {

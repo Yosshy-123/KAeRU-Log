@@ -2,6 +2,8 @@
 
 const express = require('express');
 const cors = require('cors');
+const validator = require('validator');
+const winston = require('winston');
 
 const securityHeaders = require('./securityHeaders');
 const createApiAuthRouter = require('./routes/apiAuth');
@@ -13,7 +15,12 @@ const { validateAuthToken } = require('./auth');
 const rawLogAction = require('./utils/logger');
 const KEYS = require('./lib/redisKeys');
 
-// -------------------- REST セッション用ミドルウェア --------------------
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.json(),
+  transports: [new winston.transports.Console()],
+});
+
 function createRequireSocketSession(redisClient, safeLogAction) {
   return async function requireSocketSession(req, res, next) {
     const token = req.headers['authorization']?.replace(/^Bearer\s+/i, '');
@@ -23,7 +30,13 @@ function createRequireSocketSession(redisClient, safeLogAction) {
       return res.status(401).json({ error: 'Authentication required', code: 'no_token' });
     }
 
-    const clientId = await validateAuthToken(redisClient, token);
+    let clientId;
+    try {
+      clientId = await validateAuthToken(redisClient, token);
+    } catch (err) {
+      await safeLogAction({ user: null, action: 'validateTokenError', extra: { error: err.message } });
+      return res.status(500).json({ error: 'Server error', code: 'server_error' });
+    }
 
     if (!clientId) {
       await safeLogAction({ user: null, action: 'invalidRestToken', extra: { token } });
@@ -32,12 +45,10 @@ function createRequireSocketSession(redisClient, safeLogAction) {
 
     req.clientId = clientId;
     req.token = token;
-
     next();
   };
 }
 
-// -------------------- Toast helpers --------------------
 function createToastEmitters(io) {
   function emitUserToast(clientId, message) {
     const roomName = KEYS.userRoom(clientId);
@@ -62,12 +73,10 @@ function createToastEmitters(io) {
 function createApp({ redisClient, io, adminPass, frontendUrl }) {
   const app = express();
 
-  // Render などのリバースプロキシ環境用
   app.set('trust proxy', 2);
 
   app.use(express.json({ limit: '100kb' }));
 
-  // CORS
   app.use(
     cors({
       origin: frontendUrl,
@@ -76,13 +85,12 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
     })
   );
 
-  // セキュリティヘッダ
   app.use(securityHeaders(frontendUrl));
 
-  // safe logger
   async function safeLogAction(payload) {
     try {
       await rawLogAction(redisClient, payload);
+      logger.info(payload);
     } catch (err) {
       console.error('[safeLogAction] log failed', err);
     }
@@ -90,14 +98,10 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
 
   const { emitUserToast, emitRoomToast } = createToastEmitters(io);
 
-  // -------------------- Routes --------------------
-  // auth (token不要)
   app.use('/api', createApiAuthRouter({ redisClient, safeLogAction }));
 
-  // token必須 middleware
   const requireSocketSession = createRequireSocketSession(redisClient, safeLogAction);
 
-  // messages
   app.use(
     '/api',
     requireSocketSession,
@@ -109,7 +113,6 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
     })
   );
 
-  // username
   app.use(
     '/api',
     requireSocketSession,
@@ -120,7 +123,6 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
     })
   );
 
-  // admin
   app.use(
     '/api/admin',
     requireSocketSession,
@@ -134,17 +136,15 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
     })
   );
 
-  // -------------------- SPA fallback / static --------------------
   app.use(express.static(`${__dirname}/public`));
   app.get(/^\/(?!api\/).*/, (req, res) => {
     res.sendFile(`${__dirname}/public/index.html`);
   });
 
-  // -------------------- Error handler --------------------
   app.use((err, req, res, next) => {
-    console.error(`[${new Date().toISOString()}] Error:`, err);
+    logger.error(`[${new Date().toISOString()}] Error:`, err);
 
-    if (res.headersSent) return;
+    if (res.headersSent) return next(err);
 
     const status = err.status || 500;
     const message = err.message || 'Internal Server Error';

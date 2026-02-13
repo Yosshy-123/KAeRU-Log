@@ -4,11 +4,13 @@ import { elements } from './dom.js';
 import { fetchWithAuth, obtainToken } from './api.js';
 import { showToast } from './toast.js';
 import { openProfileModal, closeProfileModal, refreshAdminModalUI, closeAdminModal } from './modal.js';
-import { focusInput, scrollBottom } from './utils.js';
+import { focusInput, scrollBottom, validateUsername, validateRoomId } from './utils.js';
 import { createMessage } from './render.js';
 import { startConnection } from './socket.js';
 
 export async function loadHistory() {
+  if (!validateRoomId(state.roomId)) return;
+
   try {
     const res = await fetchWithAuth(`${SERVER_URL}/api/messages/${encodeURIComponent(state.roomId)}`, {
       cache: 'no-store',
@@ -26,6 +28,7 @@ export async function loadHistory() {
     if (state.isAutoScroll) scrollBottom(false);
   } catch (e) {
     console.warn('loadHistory failed', e);
+    showToast('履歴の読み込みに失敗しました');
   }
 }
 
@@ -41,93 +44,67 @@ export async function sendMessage(overridePayload = null) {
     return;
   }
 
-  if (button.disabled) return;
-
   button.disabled = true;
 
-  let payload = overridePayload;
+  const payload = overridePayload || {
+    message: textarea.value.trim(),
+    seed: state.mySeed,
+    roomId: state.roomId,
+  };
 
-  if (!payload) {
-    const message = textarea.value.trim();
-    if (!message) {
-      button.disabled = false;
-      state.isSending = false;
-      return;
-    }
-
-    payload = {
-      roomId: state.roomId,
-      message,
-      seed: state.mySeed,
-    };
-
-    textarea.value = '';
+  if (!payload.message || !payload.seed || !payload.roomId) {
+    showToast('メッセージを入力してください');
+    state.isSending = false;
+    button.disabled = false;
+    return;
   }
 
-  try {
-    if (!state.myToken) {
-      try {
-        await obtainToken();
-      } catch (e) {
-        showToast('認証に失敗しました');
-        button.disabled = false;
-        state.isSending = false;
-        return;
-      }
-    }
+  textarea.value = '';
 
+  try {
     const res = await fetchWithAuth(`${SERVER_URL}/api/messages`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
-    if (!res) {
-      showToast('送信できませんでした');
-      button.disabled = false;
-      state.isSending = false;
-      return;
-    }
-
-    if (res.status === 429) {
-      showToast('送信制限中です。しばらくお待ちください');
-      button.disabled = false;
-      state.isSending = false;
-      return;
-    }
-
     if (!res.ok) {
-      showToast('送信に失敗しました');
-      button.disabled = false;
-      state.isSending = false;
+      const body = await res.json().catch(() => null);
+      const msg = body?.error || '送信に失敗しました';
+      showToast(msg);
+
+      if (res.status === 401 || res.status === 403) {
+        state.pendingMessage = payload;
+        await obtainToken();
+        await sendMessage(state.pendingMessage);
+        state.pendingMessage = null;
+      } else if (res.status === 429) {
+        showToast('送信制限中です。しばらくお待ちください');
+      }
+
+      textarea.value = payload.message;
       return;
     }
 
-    state.isSending = false;
-    button.disabled = false;
+    focusInput();
   } catch (e) {
     console.error('sendMessage error', e);
     showToast('通信エラーが発生しました');
-    button.disabled = false;
+    textarea.value = payload.message;
+  } finally {
     state.isSending = false;
+    button.disabled = false;
   }
 }
 
 export async function saveProfile() {
-  const name = elements.profileNameInput?.value.trim();
+  const input = elements.profileNameInput;
+  if (!input) return;
 
-  if (!name) {
-    showToast('ユーザー名を入力してください');
-    return;
-  }
+  const username = input.value.trim();
 
-  if (name.length > 24) {
-    showToast('ユーザー名は24文字以内にしてください');
-    return;
-  }
-
-  if (name === state.myName) {
-    closeProfileModal();
+  if (!validateUsername(username)) {
+    showToast('ユーザー名は1-24文字の英数字・一部記号で入力してください');
     return;
   }
 
@@ -135,28 +112,23 @@ export async function saveProfile() {
     const res = await fetchWithAuth(`${SERVER_URL}/api/username`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: name }),
+      body: JSON.stringify({ username }),
     });
 
-    if (!res) {
-      showToast('保存できませんでした');
-      return;
-    }
-
-    if (res.status === 429) {
-      showToast('変更制限中です。しばらくお待ちください');
-      return;
-    }
-
     if (!res.ok) {
-      showToast('保存に失敗しました');
+      const body = await res.json().catch(() => null);
+      const msg = body?.error || '保存に失敗しました';
+      showToast(msg);
+      if (res.status === 429) {
+        showToast('変更制限中です。30秒お待ちください');
+      }
       return;
     }
 
-    state.myName = name;
-    localStorage.setItem('chat_username', name);
-
+    state.myName = username;
+    localStorage.setItem('chat_username', state.myName);
     closeProfileModal();
+    showToast('ユーザー名を保存しました');
   } catch (e) {
     console.error('saveProfile error', e);
     showToast('通信エラーが発生しました');
@@ -164,58 +136,39 @@ export async function saveProfile() {
 }
 
 export async function adminLogin() {
-  const password = elements.adminPasswordInput?.value.trim();
+  const input = elements.adminPasswordInput;
+  if (!input) return;
+
+  const password = input.value.trim();
 
   if (!password) {
     showToast('パスワードを入力してください');
-    return false;
+    return;
   }
 
   try {
-    if (!state.myToken) {
-      try {
-        await obtainToken();
-      } catch (e) {
-        showToast('認証に失敗しました');
-        return false;
-      }
-    }
     const res = await fetchWithAuth(`${SERVER_URL}/api/admin/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password }),
     });
 
-    if (!res) {
-      showToast('ログインできませんでした');
-      return false;
-    }
-
-    if (res.status === 401 || res.status === 403) {
-      showToast('パスワードが正しくありません');
-      return false;
-    }
-
     if (!res.ok) {
-      showToast('ログインに失敗しました');
-      return false;
+      const body = await res.json().catch(() => null);
+      const msg = body?.error || 'ログインに失敗しました';
+      showToast(msg);
+      if (res.status === 429) {
+        showToast('ログイン制限中です。30秒お待ちください');
+      }
+      return;
     }
 
-    const data = await res.json();
-
-    if (data.admin) {
-      state.isAdmin = true;
-      refreshAdminModalUI();
-      showToast('管理者としてログインしました');
-      return true;
-    } else {
-      showToast('管理者権限の確認に失敗しました');
-      return false;
-    }
+    state.isAdmin = true;
+    refreshAdminModalUI();
+    showToast('管理者としてログインしました');
   } catch (e) {
     console.error('adminLogin error', e);
     showToast('通信エラーが発生しました');
-    return false;
   }
 }
 
@@ -225,11 +178,6 @@ export async function adminLogout() {
       method: 'POST',
     });
 
-    if (!res) {
-      showToast('ログアウトできませんでした');
-      return;
-    }
-
     if (!res.ok) {
       showToast('ログアウトに失敗しました');
       return;
@@ -237,6 +185,7 @@ export async function adminLogout() {
 
     state.isAdmin = false;
     refreshAdminModalUI();
+    showToast('ログアウトしました');
   } catch (e) {
     console.error('adminLogout error', e);
     showToast('通信エラーが発生しました');

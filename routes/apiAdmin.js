@@ -26,16 +26,13 @@ function createApiAdminRouter({ redisClient, io, safeLogAction, emitUserToast, e
       return res.sendStatus(403);
     }
 
-    // token の残りTTLを取得（秒）
     const tokenTtlSec = await redisClient.ttl(KEYS.token(token));
 
-    // TTLが無い/異常なら拒否
-    if (!tokenTtlSec || tokenTtlSec <= 0) {
+    if (tokenTtlSec <= 0) {
       await safeLogAction({ user: clientId, action: 'AdminLoginFailedNoTtl' });
       return res.status(403).json({ error: 'Invalid token TTL', code: 'invalid_token_ttl' });
     }
 
-    // admin session をセット
     await redisClient.set(KEYS.adminSession(token), clientId, 'EX', tokenTtlSec);
 
     await safeLogAction({ user: clientId, action: 'AdminLogin' });
@@ -43,7 +40,6 @@ function createApiAdminRouter({ redisClient, io, safeLogAction, emitUserToast, e
     res.json({ ok: true, admin: true });
   });
 
-  // GET /api/admin/status
   router.get('/status', async (req, res) => {
     const clientId = req.clientId;
     const token = req.token;
@@ -56,7 +52,6 @@ function createApiAdminRouter({ redisClient, io, safeLogAction, emitUserToast, e
     res.json({ admin: isAdmin });
   });
 
-  // POST /api/admin/logout
   router.post('/logout', async (req, res) => {
     const clientId = req.clientId;
     const token = req.token;
@@ -89,7 +84,6 @@ function createApiAdminRouter({ redisClient, io, safeLogAction, emitUserToast, e
     res.json({ ok: true });
   });
 
-  // POST /api/admin/clear/:roomId
   router.post('/clear/:roomId([a-zA-Z0-9_-]{1,32})', async (req, res) => {
     const roomId = req.params.roomId;
     const clientId = req.clientId;

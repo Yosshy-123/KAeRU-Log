@@ -9,7 +9,12 @@ function createAuthToken() {
 
 async function validateAuthToken(redisClient, token) {
   if (!token) return null;
-  return (await redisClient.get(KEYS.token(token))) || null;
+  try {
+    return await redisClient.get(KEYS.token(token)) || null;
+  } catch (err) {
+    console.error('validateAuthToken error', err);
+    return null; // fail-close
+  }
 }
 
 module.exports = { createAuthToken, validateAuthToken };

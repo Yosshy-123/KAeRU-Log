@@ -47,7 +47,7 @@ module.exports = function createTokenBucket(redisClient) {
       }
       throw err;
     }
-}
+  }
 
   async function allow(key, opts = {}) {
     if (!key) throw new Error('tokenBucket.allow: key required');
@@ -66,12 +66,10 @@ module.exports = function createTokenBucket(redisClient) {
 
     try {
       const res = await evalSafe(1, keysAndArgs);
-
       return {
         allowed: Number(res[0]) === 1,
         tokens: Number(res[1]),
       };
-
     } catch (err) {
       console.error('[tokenBucket] eval error', err);
       return { allowed: false, tokens: 0, error: err };

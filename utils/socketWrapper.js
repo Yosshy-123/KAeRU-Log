@@ -1,6 +1,5 @@
 module.exports = function createWrapperFactory({ redisClient, io, log, safeEmitSocket }) {
   if (!log) {
-    // fallback logger that uses console
     log = async (payload) => {
       try { console.error('[socketWrapper] missing logger, payload:', payload); } catch {}
     };
@@ -10,7 +9,6 @@ module.exports = function createWrapperFactory({ redisClient, io, log, safeEmitS
     return function wrap(handler) {
       return async (...args) => {
         try {
-          // handler may expect (socket, data) as first args; we pass them as-is
           await handler(socket, ...args);
         } catch (err) {
           try {

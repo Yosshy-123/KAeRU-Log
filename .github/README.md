@@ -1,7 +1,7 @@
 <div align="center">
   <img height="150px" src="logo.png" />
   <h1>KAeRU Log</h1>
-  <h3>Lightweight Node.js Chat App</h3>
+  <h3>Lightweight Node.js and WebSocket Chat App</h3>
   <a href="https://render.com/deploy?repo=https://github.com/Yosshy-123/KAeRU-Log.git"><img height="30px" src="https://render.com/images/deploy-to-render-button.svg" /></a>
 
   <table>

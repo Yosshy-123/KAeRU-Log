@@ -69,3 +69,11 @@ export function setConnectionState(stateName) {
       if (elements.connectionText) elements.connectionText.textContent = '接続中';
   }
 }
+
+export function validateRoomId(roomId) {
+  return /^[a-zA-Z0-9_-]{1,32}$/.test(roomId);
+}
+
+export function validateUsername(username) {
+  return typeof username === 'string' && username.trim().length > 0 && username.length <= 24 && /^[a-zA-Z0-9 _-]+$/.test(username);
+}

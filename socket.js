@@ -1,6 +1,7 @@
 'use strict';
 
 const { Server: SocketIOServer } = require('socket.io');
+const { createAdapter } = require('@socket.io/redis-adapter');
 
 const KEYS = require('./lib/redisKeys');
 const rawLogAction = require('./utils/logger');
@@ -25,6 +26,7 @@ function createSocketServer({ httpServer, redisClient, frontendUrl }) {
       methods: ['GET', 'POST', 'OPTIONS'],
       credentials: true,
     },
+    adapter: createAdapter(redisClient, redisClient.duplicate()),
   });
 
   async function safeLogAction(payload) {
@@ -42,8 +44,21 @@ function createSocketServer({ httpServer, redisClient, frontendUrl }) {
     safeEmitSocket,
   });
 
-  // middleware
+  const ipSessions = new Map();
   io.use(async (socket, next) => {
+    const ip = socket.handshake.address;
+    if (!ipSessions.has(ip)) ipSessions.set(ip, new Set());
+    const sessions = ipSessions.get(ip);
+    if (sessions.size >= 3) {
+      await safeLogAction({ user: null, action: 'ipSessionLimitExceeded', extra: { ip } });
+      return next(new Error('IP_SESSION_LIMIT'));
+    }
+    sessions.add(socket.id);
+    socket.on('disconnect', () => {
+      sessions.delete(socket.id);
+      if (sessions.size === 0) ipSessions.delete(ip);
+    });
+
     try {
       socket.data = socket.data || {};
       const token = socket.handshake.auth?.token;
@@ -62,9 +77,7 @@ function createSocketServer({ httpServer, redisClient, frontendUrl }) {
 
       socket.data.clientId = clientId;
       socket.data.authenticated = true;
-
       socket.join(KEYS.userRoom(clientId));
-
       next();
     } catch (err) {
       next(new Error('Authentication error'));
@@ -113,6 +126,7 @@ function createSocketServer({ httpServer, redisClient, frontendUrl }) {
         const clientId = socket.data?.clientId;
 
         if (roomId) {
+          socket.leave(roomId);
           const roomSize = io.sockets.adapter.rooms.get(roomId)?.size || 0;
           io.to(roomId).emit('roomUserCount', roomSize);
         }
