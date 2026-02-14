@@ -1,65 +1,80 @@
-'use strict';
+const fs = require('fs');
+const path = require('path');
 
-/**
- * Create a token bucket rate limiter
- * @param {Object} redisClient - Redis client instance
- * @returns {Object} Token bucket instance with allow method
- */
-function createTokenBucket(redisClient) {
-  return {
-    /**
-     * Check if request is allowed within rate limit
-     * @param {string} key - Rate limit key
-     * @param {Object} options - Configuration
-     * @param {number} options.capacity - Max tokens in bucket
-     * @param {number} options.refillPerSec - Tokens added per second
-     * @returns {Promise<Object>} Result with allowed flag
-     */
-    async allow(key, { capacity, refillPerSec }) {
+const LUA_PATH = path.join(__dirname, '..', 'lua', 'tokenBucket.lua');
+const LUA_SOURCE = fs.readFileSync(LUA_PATH, 'utf8');
+
+module.exports = function createTokenBucket(redisClient) {
+  let sha = null;
+  let loading = false;
+  let loadPromise = null;
+
+  async function loadScript() {
+    if (sha) return sha;
+    if (loading && loadPromise) return loadPromise;
+    loading = true;
+    loadPromise = (async () => {
       try {
-        // Get current state
-        const data = await redisClient.get(key);
-        
-        let state = { tokens: capacity, lastRefill: Date.now() };
-        
-        if (data) {
-          try {
-            state = JSON.parse(data);
-          } catch (e) {
-            // If parsing fails, reset state
-            state = { tokens: capacity, lastRefill: Date.now() };
-          }
-        }
-
-        // Calculate refill
-        const now = Date.now();
-        const timePassed = (now - state.lastRefill) / 1000; // seconds
-        const tokensAdded = timePassed * refillPerSec;
-        const newTokens = Math.min(capacity, state.tokens + tokensAdded);
-
-        // Check if allowed
-        const allowed = newTokens >= 1;
-
-        // Update state
-        const updatedState = {
-          tokens: allowed ? newTokens - 1 : newTokens,
-          lastRefill: now
-        };
-
-        // Store updated state with 1 hour TTL
-        await redisClient.setEx(
-          key,
-          3600,
-          JSON.stringify(updatedState)
-        );
-
-        return { allowed };
-      } catch (err) {
-        console.error('[tokenBucket] Error:', err);
-        return { allowed: false };
+        sha = await redisClient.script('LOAD', LUA_SOURCE);
+        return sha;
+      } finally {
+        loading = false;
+        loadPromise = null;
       }
-    }
-  };
-}
+    })();
+    return loadPromise;
+  }
 
-module.exports = createTokenBucket;
+  async function evalSafe(numKeys, keysAndArgs) {
+    try {
+      if (!sha) {
+        sha = await redisClient.script('LOAD', LUA_SOURCE);
+      }
+
+      return await redisClient.evalsha(
+        sha,
+        numKeys,
+        ...keysAndArgs
+      );
+
+    } catch (err) {
+      if ((err.message || '').toUpperCase().includes('NOSCRIPT')) {
+        return await redisClient.eval(
+          LUA_SOURCE,
+          numKeys,
+          ...keysAndArgs
+        );
+      }
+      throw err;
+    }
+  }
+
+  async function allow(key, opts = {}) {
+    if (!key) throw new Error('tokenBucket.allow: key required');
+
+    const capacity = Number(opts.capacity || 1);
+    const refillPerSec = Number(opts.refillPerSec || 0);
+    const refillPerMs = refillPerSec / 1000;
+    const nowMs = Date.now();
+
+    const keysAndArgs = [
+      key,
+      String(capacity),
+      String(refillPerMs),
+      String(nowMs),
+    ];
+
+    try {
+      const res = await evalSafe(1, keysAndArgs);
+      return {
+        allowed: Number(res[0]) === 1,
+        tokens: Number(res[1]),
+      };
+    } catch (err) {
+      console.error('[tokenBucket] eval error', err);
+      return { allowed: false, tokens: 0, error: err };
+    }
+  }
+
+  return { allow, loadScript };
+};

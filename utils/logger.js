@@ -1,103 +1,40 @@
-'use strict';
+module.exports = async function (redisClient, { user, action, extra = {} } = {}) {
+  if (!action) throw new Error("rawLogAction: 'action' must be specified");
 
-const { formatJST } = require('./time');
+  // timestamp in JST for readability
+  const now = new Date();
+  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const time = jst.toISOString().replace('T', ' ').slice(0, 19);
 
-/**
- * Log action with user and context information
- * Handles errors gracefully to prevent logging failures from breaking the app
- * 
- * @param {Object} redisClient - Redis client instance
- * @param {Object} payload - Payload object
- * @param {string} payload.user - User ID (optional, can be null)
- * @param {string} payload.action - Action being logged (required)
- * @param {Object} payload.extra - Additional context (optional)
- * @returns {Promise<void>}
- */
-module.exports = async function rawLogAction(redisClient, { user, action, extra = {} } = {}) {
+  const clientId = user ?? '-';
+
+  // try to fetch username with a small timeout to avoid blocking
+  async function fetchUsername(timeoutMs = 100) {
+    if (!user) return '-';
+    try {
+      const getPromise = redisClient.get(`username:${user}`);
+      const timeout = new Promise((res) => setTimeout(() => res(null), timeoutMs));
+      const val = await Promise.race([getPromise, timeout]);
+      return val || '-';
+    } catch (err) {
+      return '-';
+    }
+  }
+
+  let username = '-';
   try {
-    if (!action) {
-      throw new Error("rawLogAction: 'action' must be specified");
-    }
+    username = await fetchUsername(100);
+  } catch (e) {
+    username = '-';
+  }
 
-    // Format timestamp in JST
-    const time = formatJST(new Date(), true);
-    const clientId = user ?? '-';
+  const extraStr = extra && Object.keys(extra).length ? ` ${JSON.stringify(extra)}` : '';
 
-    // Fetch username with timeout to avoid blocking
-    let username = '-';
-    try {
-      username = await fetchUsername(redisClient, user);
-    } catch (err) {
-      console.warn('[rawLogAction] Failed to fetch username:', err.message);
-      username = '-';
-    }
-
-    // Build log message
-    const extraStr = extra && Object.keys(extra).length > 0 
-      ? ` ${JSON.stringify(extra)}` 
-      : '';
-    
-    const logMessage = `[${time}] [User:${clientId}] [Username:${username}] Action: ${action}${extraStr}`;
-
-    // Log to console
-    try {
-      console.log(logMessage);
-    } catch (err) {
-      console.error('[rawLogAction] Failed to log to console:', err);
-    }
-
-    // Store in Redis for persistence (non-blocking)
-    if (redisClient) {
-      try {
-        const logKey = `logs:${new Date().toISOString().split('T')[0]}`;
-        await redisClient.lPush(
-          logKey, 
-          JSON.stringify({
-            timestamp: new Date().toISOString(),
-            user: clientId,
-            username,
-            action,
-            extra,
-          })
-        );
-        
-        // Set expiration (30 days)
-        await redisClient.expire(logKey, 30 * 24 * 60 * 60);
-      } catch (err) {
-        console.warn('[rawLogAction] Failed to store log in Redis:', err.message);
-        // Don't throw - logging failure shouldn't break the app
-      }
-    }
-  } catch (err) {
-    // Log the error but don't throw
-    console.error('[rawLogAction] Critical error:', err);
+  // console.log used for simplicity; replace with proper logger if available
+  try {
+    console.log(`[${time}] [User:${clientId}] [Username:${username}] Action: ${action}${extraStr}`);
+  } catch (e) {
+    // don't throw from logger
+    try { console.error('Logger output failed', e); } catch {}
   }
 };
-
-/**
- * Fetch username with timeout
- * @param {Object} redisClient - Redis client
- * @param {string} userId - User ID
- * @returns {Promise<string>} Username or '-' if not found
- */
-async function fetchUsername(redisClient, userId) {
-  if (!userId || !redisClient) return '-';
-
-  try {
-    // Create timeout promise
-    const timeoutPromise = new Promise((resolve) => 
-      setTimeout(() => resolve(null), 100)
-    );
-
-    // Create get promise
-    const getPromise = redisClient.get(`username:${userId}`);
-
-    // Race: whichever finishes first
-    const username = await Promise.race([getPromise, timeoutPromise]);
-    
-    return username || '-';
-  } catch (err) {
-    console.warn('[fetchUsername] Error:', err.message);
-    return '-';
-  }
-}

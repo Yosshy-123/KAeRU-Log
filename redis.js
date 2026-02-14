@@ -1,53 +1,14 @@
 'use strict';
 
-const redis = require('redis');
+const Redis = require('ioredis');
 
-/**
- * Create and return a Redis client
- * @param {string} redisUrl - Redis connection URL
- * @returns {Promise<Object>} Redis client instance
- */
 function createRedisClient(redisUrl) {
-  if (!redisUrl) {
-    throw new Error('REDIS_URL environment variable is required');
-  }
+  const redisClient = new Redis(redisUrl);
 
-  const client = redis.createClient({
-    url: redisUrl,
-    socket: {
-      reconnectStrategy: (retries) => {
-        if (retries > 10) {
-          console.error('Max reconnection attempts reached');
-          return new Error('Max reconnection attempts exceeded');
-        }
-        return retries * 100;
-      }
-    }
-  });
+  redisClient.on('connect', () => console.log('Redis connected'));
+  redisClient.on('error', (err) => console.error('Redis error', err));
 
-  // Handle connection events
-  client.on('connect', () => {
-    console.log('Redis connected');
-  });
-
-  client.on('ready', () => {
-    console.log('Redis ready');
-  });
-
-  client.on('error', (err) => {
-    console.error('Redis error:', err);
-  });
-
-  client.on('reconnecting', () => {
-    console.log('Redis reconnecting...');
-  });
-
-  // Connect to Redis (non-blocking)
-  client.connect().catch((err) => {
-    console.error('Failed to connect to Redis:', err);
-  });
-
-  return client;
+  return redisClient;
 }
 
 module.exports = { createRedisClient };
