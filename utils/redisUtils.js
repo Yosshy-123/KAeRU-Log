@@ -1,44 +1,46 @@
-module.exports = {
-  async checkRateLimitMs(redisClient, key, windowMs) {
-    try {
-      const last = await redisClient.get(key);
-      const now = Date.now();
-      if (last && now - Number(last) < windowMs) return false;
-      await redisClient.set(key, String(now), 'PX', windowMs);
-      return true;
-    } catch (err) {
-      console.error('checkRateLimitMs error', err);
-      return false;
-    }
-  },
+'use strict';
 
-  async getOrResetByTTLSec(redisClient, key, defaultValue = 0, expireSec = 0) {
-    try {
-      const raw = await redisClient.get(key);
-      let value = raw == null ? defaultValue : Number(raw) || 0;
-      const ttl = await redisClient.ttl(key);
-      if (ttl === -2 && expireSec > 0) {
-        await redisClient.set(key, String(value), 'EX', expireSec);
-      }
-      return value;
-    } catch (err) {
-      console.error('getOrResetByTTLSec error', err);
-      return defaultValue;
-    }
-  },
+/**
+ * Check rate limit in milliseconds
+ * @param {Object} redisClient - Redis client
+ * @param {string} key - Rate limit key
+ * @param {number} windowMs - Time window in milliseconds
+ * @returns {Promise<boolean>} True if rate limit allows, false otherwise
+ */
+async function checkRateLimitMs(redisClient, key, windowMs) {
+  try {
+    const now = Date.now();
+    const data = await redisClient.get(key);
 
-  async checkCountLimitSec(redisClient, key, limit, windowSec) {
-    try {
-      const count = Number(await redisClient.get(key)) || 0;
-      if (count + 1 > limit) return false;
-      const pipeline = redisClient.pipeline();
-      pipeline.incr(key);
-      pipeline.expire(key, windowSec);
-      await pipeline.exec();
+    if (!data) {
+      // First request, allow and set expiry
+      await redisClient.setEx(
+        key,
+        Math.ceil(windowMs / 1000),
+        String(now)
+      );
       return true;
-    } catch (err) {
-      console.error('checkCountLimitSec error', err);
-      return false;
     }
-  },
-};
+
+    const lastTime = parseInt(data);
+    const timeSinceLastRequest = now - lastTime;
+
+    if (timeSinceLastRequest >= windowMs) {
+      // Enough time has passed, allow
+      await redisClient.setEx(
+        key,
+        Math.ceil(windowMs / 1000),
+        String(now)
+      );
+      return true;
+    }
+
+    // Rate limit exceeded
+    return false;
+  } catch (err) {
+    console.error('[checkRateLimitMs] Error:', err);
+    return true; // Allow on error
+  }
+}
+
+module.exports = { checkRateLimitMs };

@@ -5,7 +5,7 @@ const redis = require('redis');
 /**
  * Create and return a Redis client
  * @param {string} redisUrl - Redis connection URL
- * @returns {Object} Redis client instance
+ * @returns {Promise<Object>} Redis client instance
  */
 function createRedisClient(redisUrl) {
   if (!redisUrl) {
@@ -42,7 +42,7 @@ function createRedisClient(redisUrl) {
     console.log('Redis reconnecting...');
   });
 
-  // Connect to Redis
+  // Connect to Redis (non-blocking)
   client.connect().catch((err) => {
     console.error('Failed to connect to Redis:', err);
   });

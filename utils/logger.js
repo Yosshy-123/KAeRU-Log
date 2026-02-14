@@ -50,7 +50,7 @@ module.exports = async function rawLogAction(redisClient, { user, action, extra 
     if (redisClient) {
       try {
         const logKey = `logs:${new Date().toISOString().split('T')[0]}`;
-        await redisClient.lpush(
+        await redisClient.lPush(
           logKey, 
           JSON.stringify({
             timestamp: new Date().toISOString(),
