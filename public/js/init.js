@@ -1,4 +1,4 @@
-import { elements, initializeElements } from './dom.js';
+import { elements } from './dom.js';
 import { state } from './state.js';
 import { selectAll, isScrolledToBottom } from './utils.js';
 import { changeChatRoom } from './room.js';
@@ -137,12 +137,4 @@ export async function initialize() {
   } catch (e) {
     console.warn('initialize error', e);
   }
-}
-
-// Initialize DOM elements when this module is loaded
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initializeElements);
-} else {
-  // DOM is already loaded
-  initializeElements();
 }
