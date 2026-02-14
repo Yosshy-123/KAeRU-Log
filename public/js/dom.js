@@ -1,38 +1,84 @@
-const $ = (sel) => document.querySelector(sel);
+/**
+ * Safe DOM query selector
+ * @param {string} sel - CSS selector
+ * @returns {Element|null} DOM element or null
+ */
+function querySelector(sel) {
+  try {
+    return document.querySelector(sel);
+  } catch (e) {
+    console.warn(`Failed to query selector: ${sel}`, e);
+    return null;
+  }
+}
 
-export const elements = {
-  chatContainer: $('main') || document.documentElement,
-  messageList: $('#messageList'),
-  messageTextarea: $('#messageTextarea'),
-  sendMessageButton: $('#sendMessageButton'),
-  toastNotification: $('#toastNotification'),
+/**
+ * Cache DOM elements for access throughout the application
+ * Elements are initialized after DOM is ready
+ */
+let elements = null;
 
-  profileModal: $('#profileModal'),
-  profileNameInput: $('#profileNameInput'),
-  openProfileButton: $('#openProfileButton'),
-  closeProfileButton: $('#closeProfileButton'),
-  saveProfileButton: $('#saveProfileButton'),
+/**
+ * Initialize DOM element references
+ * Call this after DOM is ready to ensure all elements exist
+ */
+function initializeElements() {
+  elements = {
+    chatContainer: querySelector('main') || document.documentElement,
+    messageList: querySelector('#messageList'),
+    messageTextarea: querySelector('#messageTextarea'),
+    sendMessageButton: querySelector('#sendMessageButton'),
+    toastNotification: querySelector('#toastNotification'),
 
-  adminModal: $('#adminModal'),
-  openAdminButton: $('#openAdminButton'),
+    profileModal: querySelector('#profileModal'),
+    profileNameInput: querySelector('#profileNameInput'),
+    openProfileButton: querySelector('#openProfileButton'),
+    closeProfileButton: querySelector('#closeProfileButton'),
+    saveProfileButton: querySelector('#saveProfileButton'),
 
-  adminPasswordInput: $('#adminPasswordInput'),
-  adminLoginButton: $('#adminLoginButton'),
-  adminLogoutButton: $('#adminLogoutButton'),
+    adminModal: querySelector('#adminModal'),
+    openAdminButton: querySelector('#openAdminButton'),
 
-  closeAdminButton: $('#closeAdminButton'),
-  closeAdminButton2: $('#closeAdminButton2'),
+    adminPasswordInput: querySelector('#adminPasswordInput'),
+    adminLoginButton: querySelector('#adminLoginButton'),
+    adminLogoutButton: querySelector('#adminLogoutButton'),
 
-  clearMessagesButton: $('#clearMessagesButton'),
+    closeAdminButton: querySelector('#closeAdminButton'),
+    closeAdminButton2: querySelector('#closeAdminButton2'),
 
-  adminLoginSection: $('#adminLoginSection'),
-  adminPanelSection: $('#adminPanelSection'),
-  adminModalTitle: $('#adminModalTitle'),
+    clearMessagesButton: querySelector('#clearMessagesButton'),
 
-  connectionText: $('#connectionText'),
-  connectionIndicator: $('#connectionIndicator'),
-  onlineUserCount: $('#onlineUserCount'),
+    adminLoginSection: querySelector('#adminLoginSection'),
+    adminPanelSection: querySelector('#adminPanelSection'),
+    adminModalTitle: querySelector('#adminModalTitle'),
 
-  roomIdInput: $('#roomIdInput'),
-  joinRoomButton: $('#joinRoomButton'),
-};
+    connectionText: querySelector('#connectionText'),
+    connectionIndicator: querySelector('#connectionIndicator'),
+    onlineUserCount: querySelector('#onlineUserCount'),
+
+    roomIdInput: querySelector('#roomIdInput'),
+    joinRoomButton: querySelector('#joinRoomButton'),
+  };
+
+  return elements;
+}
+
+/**
+ * Get cached DOM elements
+ * @returns {Object} Object containing DOM element references
+ */
+function getElements() {
+  if (!elements) {
+    console.warn('DOM elements not initialized yet, initializing now');
+    initializeElements();
+  }
+  return elements;
+}
+
+export { initializeElements, getElements };
+export const elements = new Proxy({}, {
+  get: (target, prop) => {
+    const els = getElements();
+    return els[prop];
+  },
+});
