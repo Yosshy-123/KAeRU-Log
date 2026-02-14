@@ -13,7 +13,7 @@ function createApiAuthRouter({ redisClient, safeLogAction }) {
   const router = express.Router();
   const tokenBucket = createTokenBucket(redisClient);
 
-  router.post('/auth', async (req, res) => {
+  router.post('/', async (req, res) => {
     const ip = req.ip;
     const rateKey = KEYS.tokenBucketAuthIp(ip) + ':' + crypto.createHash('sha256').update(ip).digest('hex').slice(0, 8);
 
