@@ -75,5 +75,9 @@ export function validateRoomId(roomId) {
 }
 
 export function validateUsername(username) {
-  return typeof username === 'string' && username.trim().length > 0 && username.length <= 24 && /^[a-zA-Z0-9 _-]+$/.test(username);
+  return (
+    typeof username === 'string' &&
+    username.trim().length >= 1 &&
+    username.trim().length <= 15
+  );
 }

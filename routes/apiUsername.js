@@ -21,10 +21,10 @@ function createApiUsernameRouter({ redisClient, safeLogAction, emitUserToast }) 
       return res.status(400).json({ error: 'Invalid username' });
     }
 
-    if (username.length > 24 || !validator.isAlphanumeric(username.trim(), 'en-US', { ignore: ' _-' })) {
-      emitUserToast(clientId, 'ユーザー名は24文字以内にしてください');
-      return res.status(400).json({ error: 'Username too long or invalid' });
-    }
+  if (username.trim().length > 15) {
+    emitUserToast(clientId, 'ユーザー名は15文字以内にしてください');
+    return res.status(400).json({ error: 'Username too long' });
+  }
 
     const sanitized = escapeHTML(username.trim());
     const key = KEYS.username(clientId);

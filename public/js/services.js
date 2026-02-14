@@ -104,7 +104,7 @@ export async function saveProfile() {
   const username = input.value.trim();
 
   if (!validateUsername(username)) {
-    showToast('ユーザー名は1-24文字の英数字・一部記号で入力してください');
+    showToast('ユーザー名は1-15文字で入力してください');
     return;
   }
 
