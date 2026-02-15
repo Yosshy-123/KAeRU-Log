@@ -66,7 +66,6 @@
 ├── utils/
 │   ├── logger.js
 │   ├── redisUtils.js
-│   ├── sanitize.js
 │   ├── socketWrapper.js
 │   ├── time.js
 │   └── tokenBucket.js

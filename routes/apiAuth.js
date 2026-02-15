@@ -5,7 +5,6 @@ const crypto = require('crypto');
 const validator = require('validator');
 
 const KEYS = require('../lib/redisKeys');
-const { escapeHTML } = require('../utils/sanitize');
 const { createAuthToken } = require('../auth');
 const createTokenBucket = require('../utils/tokenBucket');
 
@@ -42,7 +41,7 @@ function createApiAuthRouter({ redisClient, safeLogAction }) {
 
     try {
       await redisClient.set(KEYS.token(token), clientId, 'EX', 60 * 60 * 24);
-      await redisClient.set(KEYS.username(clientId), escapeHTML(username), 'EX', 60 * 60 * 24);
+      await redisClient.set(KEYS.username(clientId), username, 'EX', 60 * 60 * 24);
     } catch (err) {
       return res.status(500).json({ error: 'Server error' });
     }

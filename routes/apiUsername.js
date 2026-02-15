@@ -4,7 +4,6 @@ const express = require('express');
 const validator = require('validator');
 
 const KEYS = require('../lib/redisKeys');
-const { escapeHTML } = require('../utils/sanitize');
 const { checkRateLimitMs } = require('../utils/redisUtils');
 
 function createApiUsernameRouter({ redisClient, safeLogAction, emitUserToast }) {
@@ -21,12 +20,11 @@ function createApiUsernameRouter({ redisClient, safeLogAction, emitUserToast }) 
       return res.status(400).json({ error: 'Invalid username' });
     }
 
-  if (username.trim().length > 15) {
-    emitUserToast(clientId, 'ユーザー名は15文字以内にしてください');
+  if (username.trim().length > 20) {
+    emitUserToast(clientId, 'ユーザー名は20文字以内にしてください');
     return res.status(400).json({ error: 'Username too long' });
   }
 
-    const sanitized = escapeHTML(username.trim());
     const key = KEYS.username(clientId);
     const current = await redisClient.get(key);
     if (current === sanitized) return res.json({ ok: true });

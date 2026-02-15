@@ -7,7 +7,6 @@ const KEYS = require('../lib/redisKeys');
 const { pushAndTrimList } = require('../lib/redisHelpers');
 const createSpamService = require('../services/spamService');
 
-const { escapeHTML } = require('../utils/sanitize');
 const { formatJST } = require('../utils/time');
 
 function createApiMessagesRouter({ redisClient, io, safeLogAction, emitUserToast }) {
@@ -104,7 +103,7 @@ function createApiMessagesRouter({ redisClient, io, safeLogAction, emitUserToast
 
     const storedMessage = {
       username,
-      message: escapeHTML(message),
+      message,
       time: formatJST(new Date()),
       seed,
     };

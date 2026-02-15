@@ -78,6 +78,6 @@ export function validateUsername(username) {
   return (
     typeof username === 'string' &&
     username.trim().length >= 1 &&
-    username.trim().length <= 15
+    username.trim().length <= 20
   );
 }
