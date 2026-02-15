@@ -44,12 +44,23 @@ function createSocketServer({ httpServer, redisClient, frontendUrl }) {
     safeEmitSocket,
   });
 
+  // Render などのリバースプロキシ環境用
+  function getClientIp(socket) {
+    const xffRaw = socket.handshake.headers['x-forwarded-for'];
+
+    const xff = Array.isArray(xffRaw) ? xffRaw[0] : xffRaw;
+    if (xff) return xff.split(',')[0].trim();
+
+    return socket.handshake.address;
+  }
+
   const ipSessions = new Map();
   io.use(async (socket, next) => {
-    const ip = socket.handshake.address;
+    const ip = getClientIp(socket); // Render などのリバースプロキシ環境用
+    // const ip = socket.handshake.address;
     if (!ipSessions.has(ip)) ipSessions.set(ip, new Set());
     const sessions = ipSessions.get(ip);
-    if (sessions.size >= 3) {
+    if (sessions.size >= 5) {
       await safeLogAction({ user: null, action: 'ipSessionLimitExceeded', extra: { ip } });
       return next(new Error('IP_SESSION_LIMIT'));
     }
