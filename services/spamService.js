@@ -5,7 +5,7 @@ const Path = require('path');
 const crypto = require('crypto');
 
 module.exports = function createSpamService(redis, logger, KEYS, config = {}) {
-  const BASE_MUTE_SEC = config.baseMuteSec || 30;
+  const BASE_MUTE_SEC = config.baseMuteSec || 60;
   const MAX_MUTE_SEC = 60 * 60 * 24;
   const REPEAT_LIMIT = typeof config.repeatLimit === 'number' ? config.repeatLimit : 3;
   const SAME_MESSAGE_LIMIT = typeof config.sameMessageLimit === 'number' ? config.sameMessageLimit : REPEAT_LIMIT;
