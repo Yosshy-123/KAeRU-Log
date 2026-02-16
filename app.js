@@ -72,10 +72,11 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
 
   app.use('/api/auth', createApiAuthRouter({ redisClient, safeLogAction }));
 
-  app.use('/api', requireSocketSession);
+  const apiRouter = express.Router();
 
-  app.use(
-    '/api',
+  apiRouter.use(requireSocketSession);
+
+  apiRouter.use(
     createApiMessagesRouter({
       redisClient,
       io,
@@ -84,8 +85,7 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
     })
   );
 
-  app.use(
-    '/api',
+  apiRouter.use(
     createApiUsernameRouter({
       redisClient,
       safeLogAction,
@@ -93,8 +93,8 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
     })
   );
 
-  app.use(
-    '/api/admin',
+  apiRouter.use(
+    '/admin',
     createApiAdminRouter({
       redisClient,
       io,
@@ -104,6 +104,8 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
       adminPass,
     })
   );
+
+  app.use('/api', apiRouter);
 
   app.use(express.static(`${__dirname}/public`));
 
