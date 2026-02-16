@@ -29,11 +29,11 @@ function createApiAuthRouter({ redisClient, safeLogAction }) {
     let { username } = req.body;
 
     if (!username || typeof username !== 'string' || username.trim().length === 0) {
-      username = 'guest-' + crypto.randomBytes(3).toString('hex');
+      return res.status(400).json({ error: 'Invalid username' });
     }
 
-    if (username.length > 24 || !validator.isAlphanumeric(username, 'en-US', { ignore: ' _-' })) {
-      return res.status(400).json({ error: 'Invalid username' });
+    if (username.trim().length > 20) {
+      return res.status(400).json({ error: 'Username too long' });
     }
 
     const clientId = crypto.randomUUID();
