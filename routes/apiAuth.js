@@ -29,7 +29,7 @@ function createApiAuthRouter({ redisClient, safeLogAction }) {
     let { username } = req.body;
 
     if (!username || typeof username !== 'string' || username.trim().length === 0) {
-      return res.status(400).json({ error: 'Invalid username' });
+      username = 'guest-' + crypto.randomBytes(3).toString('hex');
     }
 
     if (username.trim().length > 20) {
