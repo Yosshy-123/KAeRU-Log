@@ -28,11 +28,15 @@ function createApiAuthRouter({ redisClient, safeLogAction }) {
 
     let { username } = req.body;
 
-    if (!username || typeof username !== 'string' || username.trim().length === 0) {
+    if (typeof username === 'string') {
+      username = username.trim();
+    }
+
+    if (!username || typeof username !== 'string' || username.length === 0) {
       username = 'guest-' + crypto.randomBytes(3).toString('hex');
     }
 
-    if (username.trim().length > 20) {
+    if (username.length > 20) {
       return res.status(400).json({ error: 'Username too long' });
     }
 
