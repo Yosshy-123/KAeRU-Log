@@ -76,13 +76,8 @@ export async function fetchWithAuth(url, opts = {}, retry = true) {
       }
     } catch (e) {}
 
-    if (code === 'token_expired') {
-      try {
-        await obtainToken();
-      } catch (e) {
-        return res;
-      }
-
+    if (code === 'token_expired' || code === 'no_token') {
+      await obtainToken().catch(() => null);
       opts.headers['Authorization'] = `Bearer ${state.myToken}`;
       return await fetchWithAuth(url, opts, false);
     }
