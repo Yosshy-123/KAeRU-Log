@@ -141,7 +141,8 @@ ADMIN_PASS=<Administrator password>
 
 ## Live demo
 
-[https://kaeru-log.onrender.com/](https://kaeru-log.onrender.com/)
+* [https://kaeru-log.onrender.com/](https://kaeru-log.onrender.com/)
+* [https://kaeru-log-production.up.railway.app/](https://kaeru-log-production.up.railway.app/)
 
 ---
 
