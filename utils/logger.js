@@ -12,9 +12,7 @@ module.exports = async function (redisClient, { user, action, extra = {} } = {})
   async function fetchUsername(timeoutMs = 100) {
     if (!user) return '-';
     try {
-      const getPromise = redisClient.get(`username:${user}`);
-      const timeout = new Promise((res) => setTimeout(() => res(null), timeoutMs));
-      const val = await Promise.race([getPromise, timeout]);
+      const val = await redisClient.get(`username:${user}`) || null;
       return val || '-';
     } catch (err) {
       return '-';

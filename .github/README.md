@@ -65,7 +65,7 @@
 │   └── render.gs
 ├── utils/
 │   ├── logger.js
-│   ├── redisUtils.js
+│   ├── rateLimitUtils.js
 │   ├── socketWrapper.js
 │   ├── time.js
 │   └── tokenBucket.js

@@ -37,7 +37,7 @@ module.exports = function createSpamService(redis, logger, KEYS, config = {}) {
     }
   }
 
-  function sha1Hex(str) {
+  function sha256Hex(str) {
     return crypto.createHash('sha256').update(String(str)).digest('hex');
   }
 
@@ -94,7 +94,7 @@ module.exports = function createSpamService(redis, logger, KEYS, config = {}) {
 
     const now = Date.now();
     const normalized = normalizeMessage(message);
-    const msgHash = normalized ? sha1Hex(normalized) : '';
+    const msgHash = normalized ? sha256Hex(normalized) : '';
 
     const luaAvailable = typeof redis.spamCheckLua === 'function';
     const msgKeysValid = validKey(lastMsgHashKey) && validKey(repeatMsgKey) && validKey(shortRateKey);

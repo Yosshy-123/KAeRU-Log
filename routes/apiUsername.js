@@ -4,7 +4,7 @@ const express = require('express');
 const validator = require('validator');
 
 const KEYS = require('../lib/redisKeys');
-const { checkRateLimitMs } = require('../utils/redisUtils');
+const { checkRateLimitMs } = require('../utils/rateLimitUtils');
 
 function createApiUsernameRouter({ redisClient, safeLogAction, emitUserToast }) {
   const router = express.Router();

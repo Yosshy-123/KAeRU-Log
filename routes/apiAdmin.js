@@ -3,7 +3,7 @@
 const express = require('express');
 
 const KEYS = require('../lib/redisKeys');
-const { checkRateLimitMs } = require('../utils/redisUtils');
+const { checkRateLimitMs } = require('../utils/rateLimitUtils');
 
 function createApiAdminRouter({ redisClient, io, safeLogAction, emitUserToast, emitRoomToast, adminPass }) {
   const router = express.Router();
