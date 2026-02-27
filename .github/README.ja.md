@@ -141,6 +141,7 @@ ADMIN_PASS=<管理者パスワード>
 
 ## ライブデモ
 
+* [https://kaeru-log.yosshy.f5.si/](https://kaeru-log.yosshy.f5.si/)
 * [https://kaeru-log.onrender.com/](https://kaeru-log.onrender.com/)
 * [https://kaeru-log-production.up.railway.app/](https://kaeru-log-production.up.railway.app/)
 
