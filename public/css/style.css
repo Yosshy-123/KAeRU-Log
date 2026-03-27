@@ -15,9 +15,15 @@
 	--bubble-self: #2a356b;
 	--shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 	--radius: 14px;
+	--safe-top: env(safe-area-inset-top, 0px);
+	--safe-right: env(safe-area-inset-right, 0px);
+	--safe-bottom: env(safe-area-inset-bottom, 0px);
+	--safe-left: env(safe-area-inset-left, 0px);
 }
 
-* {
+*,
+*::before,
+*::after {
 	box-sizing: border-box;
 }
 
@@ -27,35 +33,47 @@ body {
 	margin: 0;
 	padding: 0;
 	width: 100%;
-	font-family: ui-sans-serif, sans-serif;
+	overflow-x: hidden;
+	font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 	background: var(--bg);
 	color: var(--text);
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
+}
+
+body {
+	overscroll-behavior: none;
 }
 
 .chat-app {
 	display: flex;
 	flex-direction: column;
-	height: 100dvh;
+	min-height: 100dvh;
+	min-height: 100svh;
 	width: 100%;
+	background: var(--bg);
 }
 
 header.chat-header {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: 14px 16px;
-	background: linear-gradient(180deg, rgba(23, 26, 43, 0.9), rgba(23, 26, 43, 0.75));
+	gap: 12px;
+	padding: calc(12px + var(--safe-top)) calc(14px + var(--safe-right)) 12px calc(14px + var(--safe-left));
+	background: linear-gradient(180deg, rgba(23, 26, 43, 0.96), rgba(23, 26, 43, 0.82));
 	border-bottom: 1px solid var(--border);
 	box-shadow: var(--shadow);
 	position: sticky;
 	top: 0;
 	z-index: 50;
+	backdrop-filter: blur(12px);
 }
 
 .app-brand {
 	display: flex;
 	align-items: center;
 	gap: 10px;
+	min-width: 0;
 }
 
 .logo {
@@ -63,10 +81,14 @@ header.chat-header {
 	height: 28px;
 	border-radius: 10px;
 	object-fit: cover;
+	flex: 0 0 auto;
 }
 
 .app-title {
 	font-weight: 700;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .connection-status {
@@ -75,6 +97,8 @@ header.chat-header {
 	gap: 8px;
 	font-size: 13px;
 	color: var(--muted);
+	white-space: nowrap;
+	flex: 0 0 auto;
 }
 
 .status-indicator {
@@ -99,6 +123,9 @@ header.chat-header {
 .header-actions {
 	display: flex;
 	gap: 8px;
+	flex: 0 0 auto;
+	flex-wrap: wrap;
+	justify-content: flex-end;
 }
 
 button.btn {
@@ -111,6 +138,11 @@ button.btn {
 	transition: all 0.15s ease;
 	color: var(--text);
 	background: linear-gradient(180deg, var(--panel), var(--panel-2));
+	-webkit-tap-highlight-color: transparent;
+}
+
+button.btn:active {
+	transform: translateY(1px);
 }
 
 button.btn.danger {
@@ -128,23 +160,26 @@ button.btn.accent {
 main {
 	flex: 1;
 	overflow-y: auto;
-	padding: 14px 12px 0 12px;
+	-webkit-overflow-scrolling: touch;
+	padding: 12px 12px 0;
 	scroll-behavior: smooth;
 	width: 100%;
+	min-height: 0;
 }
 
 .message-list {
 	display: flex;
 	flex-direction: column;
 	gap: 12px;
-	padding-bottom: 20px;
+	padding-bottom: 18px;
 	width: 100%;
 }
 
 .message-item {
 	display: flex;
-	gap: 12px;
+	gap: 10px;
 	max-width: 100%;
+	align-items: flex-end;
 }
 
 .message-item.is-self {
@@ -174,8 +209,10 @@ main {
 	border-radius: 18px;
 	padding: 12px 16px;
 	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-	min-width: 120px;
+	min-width: 0;
+	max-width: min(720px, 78vw);
 	transition: transform 0.1s ease, background 0.2s ease;
+	overflow: hidden;
 }
 
 .message-item.is-self .message-bubble {
@@ -190,17 +227,24 @@ main {
 	color: var(--muted);
 	font-size: 12px;
 	margin-bottom: 6px;
+	min-width: 0;
+	flex-wrap: wrap;
 }
 
 .message-username {
-    font-weight: 700;
-    color: #d6dcff;
+	font-weight: 700;
+	color: #d6dcff;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .message-text {
 	white-space: pre-wrap;
-	word-wrap: break-word;
-	line-height: 1.5;
+	overflow-wrap: anywhere;
+	word-break: break-word;
+	line-height: 1.55;
 	color: var(--text);
 }
 
@@ -208,17 +252,18 @@ footer.message-composer {
 	position: sticky;
 	bottom: 0;
 	z-index: 10;
-	background: linear-gradient(180deg, rgba(23, 26, 43, 0.75), rgba(18, 21, 39, 0.9));
+	background: linear-gradient(180deg, rgba(23, 26, 43, 0.82), rgba(18, 21, 39, 0.96));
 	border-top: 1px solid var(--border);
-	padding: 12px;
+	padding: 10px 12px calc(10px + var(--safe-bottom));
 	box-shadow: var(--shadow);
 	width: 100%;
+	backdrop-filter: blur(12px);
 }
 
 .composer-row {
 	display: flex;
 	gap: 10px;
-	align-items: flex-start;
+	align-items: flex-end;
 	width: 100%;
 }
 
@@ -230,6 +275,7 @@ footer.message-composer {
 	border: 1px solid var(--border);
 	border-radius: var(--radius);
 	background: linear-gradient(180deg, #151936, #10132b);
+	min-width: 0;
 }
 
 textarea {
@@ -240,21 +286,23 @@ textarea {
 	background: transparent;
 	color: var(--text);
 	font: inherit;
-	padding: 4px 2px;
+	padding: 6px 2px;
 	min-height: 44px;
 	max-height: 160px;
-	transition: box-shadow 0.2s ease, border-color 0.2s ease;
 	width: 100%;
+	overflow-y: auto;
+	-webkit-appearance: none;
 }
 
 .send-area {
 	display: flex;
 	gap: 10px;
+	flex: 0 0 auto;
 }
 
 .toast-notification {
 	position: fixed;
-	top: 12px;
+	top: calc(12px + var(--safe-top));
 	left: 50%;
 	transform: translateX(-50%);
 	background: #121631;
@@ -267,6 +315,8 @@ textarea {
 	pointer-events: none;
 	transition: opacity 0.2s ease, transform 0.2s ease;
 	z-index: 999999;
+	max-width: calc(100vw - 24px);
+	text-align: center;
 }
 
 .toast-notification.show {
@@ -300,6 +350,8 @@ textarea {
 	display: flex;
 	flex-direction: column;
 	gap: 12px;
+	max-height: calc(100dvh - 32px);
+	overflow: auto;
 }
 
 .modal-dialog h3 {
@@ -332,10 +384,11 @@ textarea {
 	gap: 8px;
 	justify-content: flex-end;
 	margin-top: 6px;
+	flex-wrap: wrap;
 }
 
 .kbd {
-	font-family: ui-monospace, monospace;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 	background: #121631;
 	border: 1px solid var(--border);
 	border-bottom-color: #2a315a;
@@ -358,6 +411,7 @@ textarea {
 
 .room-selector input {
 	flex: 1;
+	min-width: 0;
 	padding: 8px 12px;
 	border: 1px solid var(--border);
 	border-radius: var(--radius);
@@ -390,22 +444,25 @@ textarea {
 	display: none !important;
 }
 
+/* スマホ最適化 */
 @media (max-width: 820px) {
-
 	html,
 	body {
 		font-size: 14px;
 	}
 
-	main {
-		padding: 10px 8px 0;
+	header.chat-header {
+		padding: calc(10px + var(--safe-top)) 12px 10px;
+		align-items: flex-start;
 	}
 
-	header.chat-header {
-		padding: 10px 12px;
+	.app-brand {
+		gap: 8px;
 	}
 
 	.logo {
+		width: 24px;
+		height: 24px;
 		border-radius: 8px;
 	}
 
@@ -417,9 +474,22 @@ textarea {
 		font-size: 11px;
 	}
 
+	.header-actions {
+		width: 100%;
+		justify-content: flex-end;
+	}
+
 	.header-actions button {
-		padding: 6px 8px;
+		padding: 7px 10px;
 		font-size: 12px;
+	}
+
+	main {
+		padding: 10px 8px 0;
+	}
+
+	.message-list {
+		gap: 10px;
 	}
 
 	.message-item {
@@ -434,8 +504,7 @@ textarea {
 	}
 
 	.message-bubble {
-		max-width: calc(100vw - 72px);
-		min-width: unset;
+		max-width: calc(100vw - 68px);
 		padding: 10px 12px;
 		border-radius: 14px;
 	}
@@ -451,25 +520,103 @@ textarea {
 	}
 
 	footer.message-composer {
-		padding: 8px;
+		padding: 8px 8px calc(8px + var(--safe-bottom));
+	}
+
+	.composer-row {
+		gap: 8px;
+		align-items: stretch;
 	}
 
 	.message-input-wrapper {
 		padding: 6px;
+		border-radius: 12px;
 	}
 
 	textarea {
-		min-height: 38px;
-		font-size: 14px;
+		min-height: 40px;
+		font-size: 16px;
+		line-height: 1.4;
 	}
 
 	.send-area {
-		justify-content: flex-end;
+		flex-direction: column;
+		gap: 8px;
 	}
 
 	.send-area button {
 		width: 100%;
-		padding: 10px;
+		padding: 10px 12px;
 		font-size: 14px;
+	}
+
+	.room-selector {
+		padding: 10px 8px;
+		flex-direction: column;
+		align-items: stretch;
+	}
+
+	.room-selector input {
+		width: 100%;
+	}
+
+	.room-selector .btn {
+		width: 100%;
+	}
+
+	.modal-overlay {
+		padding: 12px;
+	}
+
+	.modal-dialog {
+		width: 100%;
+		padding: 14px;
+		border-radius: 14px;
+	}
+
+	.modal-actions {
+		flex-direction: column;
+	}
+
+	.modal-actions button {
+		width: 100%;
+	}
+}
+
+@media (max-width: 480px) {
+	header.chat-header {
+		gap: 8px;
+	}
+
+	.app-brand {
+		min-width: 0;
+		max-width: 100%;
+	}
+
+	.connection-status {
+		white-space: normal;
+		line-height: 1.2;
+	}
+
+	.message-item {
+		align-items: flex-end;
+	}
+
+	.message-bubble {
+		max-width: calc(100vw - 58px);
+	}
+
+	.toast-notification {
+		font-size: 13px;
+		padding: 9px 12px;
+	}
+
+	button.btn {
+		padding: 8px 10px;
+	}
+
+	textarea {
+		min-height: 38px;
+		max-height: 130px;
 	}
 }
