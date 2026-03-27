@@ -63,8 +63,6 @@
 │   └── apiUsername.js
 ├── services/
 │   └── spamService.js
-├── src/
-│   └── render.gs
 ├── utils/
 │   ├── rateLimitUtils.js
 │   ├── socketWrapper.js
