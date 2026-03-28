@@ -8,9 +8,8 @@ const createApiAuthRouter = require('./routes/apiAuth');
 const createApiMessagesRouter = require('./routes/apiMessages');
 const createApiUsernameRouter = require('./routes/apiUsername');
 const createApiAdminRouter = require('./routes/apiAdmin');
-
 const { validateAuthToken } = require('./auth');
-const KEYS = require('./lib/redisKeys');
+const { getClientIp } = require('./lib/getClientIp');
 
 function createRequireSocketSession(redisClient) {
   return async function requireSocketSession(req, res, next) {
@@ -40,9 +39,21 @@ function createRequireSocketSession(redisClient) {
 function createApp({ redisClient, io, adminPass, frontendUrl }) {
   const app = express();
 
-  app.set('trust proxy', true); // Render などのリバースプロキシ環境用
+  // trust proxy は使わず、必要な箇所で getClientIp() を明示的に使う
+  app.set('trust proxy', false);
+
+  if (io) {
+    app.set('io', io);
+  }
 
   app.disable('x-powered-by');
+
+  app.use((req, res, next) => {
+    req.clientIp = getClientIp(req, {
+      proxyMode: process.env.PROXY === 'true',
+    });
+    next();
+  });
 
   app.use(express.json({ limit: '100kb' }));
 
@@ -61,7 +72,6 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
   app.use('/api/auth', createApiAuthRouter({ redisClient }));
 
   const apiRouter = express.Router();
-
   apiRouter.use(requireSocketSession);
 
   apiRouter.use(

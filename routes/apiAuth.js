@@ -2,19 +2,21 @@
 
 const express = require('express');
 const crypto = require('crypto');
-const validator = require('validator');
 
 const KEYS = require('../lib/redisKeys');
 const { createAuthToken } = require('../auth');
 const createTokenBucket = require('../utils/tokenBucket');
+const { getClientIp } = require('../lib/getClientIp');
 
 function createApiAuthRouter({ redisClient }) {
   const router = express.Router();
   const tokenBucket = createTokenBucket(redisClient);
 
   router.post('/', async (req, res) => {
-    const ip = req.ip;
-    const rateKey = KEYS.tokenBucketAuthIp(ip) + ':' + crypto.createHash('sha256').update(ip).digest('hex').slice(0, 8);
+    // Safe client IP extraction (may use X-Forwarded-For when PROXY=true and immediate remote is local/private)
+    const ip = getClientIp(req) || '';
+    const ipHash = crypto.createHash('sha256').update(String(ip)).digest('hex').slice(0, 8);
+    const rateKey = KEYS.tokenBucketAuthIp(ipHash);
 
     const result = await tokenBucket.allow(rateKey, {
       capacity: 3,
@@ -46,6 +48,7 @@ function createApiAuthRouter({ redisClient }) {
       await redisClient.set(KEYS.token(token), clientId, 'EX', 60 * 60 * 24);
       await redisClient.set(KEYS.username(clientId), username, 'EX', 60 * 60 * 24);
     } catch (err) {
+      console.error('apiAuth set error', err);
       return res.status(500).json({ error: 'Server error' });
     }
 

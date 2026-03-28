@@ -1,13 +1,21 @@
+'use strict';
+
 const fs = require('fs');
 const path = require('path');
 
 const LUA_PATH = path.join(__dirname, '..', 'lua', 'tokenBucket.lua');
-const LUA_SOURCE = fs.readFileSync(LUA_PATH, 'utf8');
 
 module.exports = function createTokenBucket(redisClient) {
   let sha = null;
   let loading = false;
   let loadPromise = null;
+  let luaSource = null;
+
+  async function loadLuaSource() {
+    if (luaSource) return luaSource;
+    luaSource = await fs.promises.readFile(LUA_PATH, 'utf8');
+    return luaSource;
+  }
 
   async function loadScript() {
     if (sha) return sha;
@@ -15,7 +23,8 @@ module.exports = function createTokenBucket(redisClient) {
     loading = true;
     loadPromise = (async () => {
       try {
-        sha = await redisClient.script('LOAD', LUA_SOURCE);
+        const src = await loadLuaSource();
+        sha = await redisClient.script('LOAD', src);
         return sha;
       } finally {
         loading = false;
@@ -28,22 +37,14 @@ module.exports = function createTokenBucket(redisClient) {
   async function evalSafe(numKeys, keysAndArgs) {
     try {
       if (!sha) {
-        sha = await redisClient.script('LOAD', LUA_SOURCE);
+        await loadScript();
       }
 
-      return await redisClient.evalsha(
-        sha,
-        numKeys,
-        ...keysAndArgs
-      );
-
+      return await redisClient.evalsha(sha, numKeys, ...keysAndArgs);
     } catch (err) {
-      if ((err.message || '').toUpperCase().includes('NOSCRIPT')) {
-        return await redisClient.eval(
-          LUA_SOURCE,
-          numKeys,
-          ...keysAndArgs
-        );
+      if ((err && (err.message || '').toUpperCase().includes('NOSCRIPT'))) {
+        const src = await loadLuaSource();
+        return await redisClient.eval(src, numKeys, ...keysAndArgs);
       }
       throw err;
     }
@@ -53,7 +54,8 @@ module.exports = function createTokenBucket(redisClient) {
     if (!key) throw new Error('tokenBucket.allow: key required');
 
     const capacity = Number(opts.capacity || 1);
-    const refillPerSec = Number(opts.refillPerSec || 0);
+    let refillPerSec = Number(opts.refillPerSec || 0);
+    if (!Number.isFinite(refillPerSec) || refillPerSec < 0) refillPerSec = 0;
     const refillPerMs = refillPerSec / 1000;
     const nowMs = Date.now();
 
