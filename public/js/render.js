@@ -2,10 +2,8 @@ import { state } from './state.js';
 import { getInitials } from './utils.js';
 
 export function createMessage(msg) {
-  const self = msg.seed === state.mySeed;
-
   const wrap = document.createElement('div');
-  wrap.className = 'message-item' + (self ? ' is-self' : '');
+  wrap.className = 'message-item';
 
   const avatar = document.createElement('div');
   avatar.className = 'message-avatar';

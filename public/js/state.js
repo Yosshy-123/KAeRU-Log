@@ -4,7 +4,6 @@ export const state = {
 
   myName: localStorage.getItem('chat_username') || '',
   myToken: localStorage.getItem('chatToken') || '',
-  mySeed: localStorage.getItem('chat_seed') || null,
 
   roomId: null,
 

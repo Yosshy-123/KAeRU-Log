@@ -40,7 +40,7 @@ function createRequireSocketSession(redisClient) {
 function createApp({ redisClient, io, adminPass, frontendUrl }) {
   const app = express();
 
-  app.set('trust proxy', true); // Render などのリバースプロキシ環境用
+  app.set('trust proxy', true); // Reverse-proxy (X-Forwarded-For) 対応
 
   app.disable('x-powered-by');
 

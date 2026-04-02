@@ -147,11 +147,6 @@ main {
 	max-width: 100%;
 }
 
-.message-item.is-self {
-	align-self: flex-end;
-	flex-direction: row-reverse;
-}
-
 .message-avatar {
 	width: 36px;
 	height: 36px;
@@ -176,11 +171,6 @@ main {
 	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 	min-width: 120px;
 	transition: transform 0.1s ease, background 0.2s ease;
-}
-
-.message-item.is-self .message-bubble {
-	background: var(--bubble-self);
-	border-color: #3e4685;
 }
 
 .message-meta {

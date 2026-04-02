@@ -30,8 +30,8 @@ function createApiMessagesRouter({ redisClient, io, emitUserToast }) {
         .filter(Boolean);
 
       res.json(
-        messages.map(({ username, message, time, seed, admin }) => {
-          const out = { username, message, time, seed };
+        messages.map(({ username, message, time, admin }) => {
+          const out = { username, message, time };
           if (admin === true) out.admin = true;
           return out;
         })
@@ -42,9 +42,9 @@ function createApiMessagesRouter({ redisClient, io, emitUserToast }) {
   });
 
   router.post('/messages', async (req, res) => {
-    const { message, seed, roomId } = req.body;
+    const { message, roomId } = req.body;
 
-    if (!roomId || !message || !seed) return res.sendStatus(400);
+    if (!roomId || !message) return res.sendStatus(400);
     if (!validator.matches(roomId, /^[a-zA-Z0-9_-]{1,32}$/)) return res.sendStatus(400);
     if (typeof message !== 'string' || message.length === 0 || message.length > 300) return res.sendStatus(400);
 
@@ -92,7 +92,6 @@ function createApiMessagesRouter({ redisClient, io, emitUserToast }) {
       username,
       message,
       time: formatJST(new Date()),
-      seed,
     };
 
     if (isAdmin) {

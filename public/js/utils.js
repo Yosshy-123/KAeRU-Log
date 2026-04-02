@@ -1,15 +1,6 @@
 import { elements } from './dom.js';
 import { state } from './state.js';
 
-export function generateUserSeed(length) {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  const array = new Uint32Array(length);
-  window.crypto.getRandomValues(array);
-  let s = '';
-  for (let i = 0; i < length; i++) s += chars[array[i] % chars.length];
-  return s;
-}
-
 export function selectAll(input) {
   if (!input) return;
   setTimeout(() => input.select(), 0);

@@ -2,7 +2,6 @@
 
 import { getRoomIdFromPath } from './config.js';
 import { state } from './state.js';
-import { generateUserSeed } from './utils.js';
 import { setupRoomInput, setupEventListeners, initialize } from './init.js';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -14,11 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   state.roomId = roomId;
-
-  if (!state.mySeed) {
-    state.mySeed = generateUserSeed(40);
-    localStorage.setItem('chat_seed', state.mySeed);
-  }
 
   setupRoomInput();
   setupEventListeners();
