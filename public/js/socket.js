@@ -115,7 +115,7 @@ export function createSocket() {
   state.socket.on('clearMessages', () => {
     state.messages = [];
     if (elements.messageList) elements.messageList.innerHTML = '';
-    showServerToast('メッセージがクリアされました');
+    showToast('メッセージがクリアされました');
   });
 
   state.socket.on('error', (err) => {
