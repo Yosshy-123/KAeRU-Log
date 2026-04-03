@@ -67,7 +67,8 @@
 │   ├── rateLimitUtils.js
 │   ├── socketWrapper.js
 │   ├── time.js
-│   └── tokenBucket.js
+│   ├── tokenBucket.js
+│   └── trustProxy.js
 ├── app.js
 ├── auth.js
 ├── LICENSE
