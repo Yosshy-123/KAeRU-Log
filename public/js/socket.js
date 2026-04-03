@@ -2,10 +2,72 @@ import { SERVER_URL } from './config.js';
 import { state } from './state.js';
 import { elements } from './dom.js';
 import { setConnectionState, scrollBottom, focusInput, validateRoomId } from './utils.js';
-import { showServerToast } from './toast.js';
+import { showServerToast, showToast } from './toast.js';
 import { createMessage } from './render.js';
 import { loadHistory } from './services.js';
 import { obtainToken } from './api.js';
+
+let tokenRefreshPromise = null;
+let authRetryInFlight = false;
+
+function applySocketAuth() {
+  if (!state.socket) return;
+
+  if (state.myToken) {
+    state.socket.auth = { token: state.myToken };
+  } else {
+    try {
+      delete state.socket.auth;
+    } catch (e) {}
+  }
+}
+
+async function refreshTokenOnce() {
+  if (tokenRefreshPromise) return tokenRefreshPromise;
+
+  tokenRefreshPromise = (async () => {
+    await obtainToken();
+    return Boolean(state.myToken);
+  })();
+
+  try {
+    return await tokenRefreshPromise;
+  } finally {
+    tokenRefreshPromise = null;
+  }
+}
+
+async function reconnectAfterAuthFailure() {
+  if (authRetryInFlight) return;
+  authRetryInFlight = true;
+
+  try {
+    const ok = await refreshTokenOnce();
+
+    if (!ok || !state.socket) {
+      showToast('認証に失敗しました。再接続できませんでした。');
+      return;
+    }
+
+    applySocketAuth();
+
+    try {
+      if (state.socket.connected) {
+        state.socket.disconnect();
+      }
+    } catch (e) {}
+
+    try {
+      state.socket.connect();
+    } catch (e) {
+      showToast('再接続に失敗しました');
+    }
+  } catch (e) {
+    showToast('認証に失敗しました。再接続できませんでした。');
+  } finally {
+    authRetryInFlight = false;
+  }
+}
 
 export function joinRoom() {
   if (!state.socket) return;
@@ -21,63 +83,26 @@ export function createSocket() {
     return;
   }
 
-  // Prepare options: only send auth when we have a token.
-  const socketOptions = {
+  state.socket = io(SERVER_URL, {
     transports: ['websocket'],
     secure: true,
-  };
+    autoConnect: false,
+  });
 
-  if (state.myToken) {
-    socketOptions.auth = { token: state.myToken };
-    socketOptions.autoConnect = true;
-  } else {
-    // Prevent automatic connect when no token is present.
-    socketOptions.autoConnect = false;
-  }
-
-  state.socket = io(SERVER_URL, socketOptions);
-
-  // If we created the socket without autoConnect, try to obtain token and then connect.
-  if (!state.myToken) {
-    // Do not block creation; attempt to fetch token in background.
-    obtainToken()
-      .then(() => {
-        if (!state.socket) return;
-        if (state.myToken) {
-          state.socket.auth = { token: state.myToken };
-        } else {
-          // Ensure auth field removed when still no token
-          try {
-            delete state.socket.auth;
-          } catch (e) {}
-        }
-        try {
-          state.socket.connect();
-        } catch (e) {}
-      })
-      .catch(() => {
-        location.reload();
-      });
-  }
+  applySocketAuth();
 
   state.socket.on('connect', () => {
+    authRetryInFlight = false;
     setConnectionState('online');
     joinRoom();
   });
 
-  state.socket.on('disconnect', () => setConnectionState('offline'));
+  state.socket.on('disconnect', () => {
+    setConnectionState('offline');
+  });
 
   state.socket.io.on('reconnect_attempt', () => {
-    // Only set auth when we actually have a token.
-    if (state.socket) {
-      if (state.myToken) {
-        state.socket.auth = { token: state.myToken };
-      } else {
-        try {
-          delete state.socket.auth;
-        } catch (e) {}
-      }
-    }
+    applySocketAuth();
     setConnectionState('connecting');
   });
 
@@ -95,7 +120,7 @@ export function createSocket() {
 
   state.socket.on('error', (err) => {
     console.error('Socket error:', err);
-    showServerToast('エラーが発生しました: ' + (err.message || '不明'));
+    showToast('エラーが発生しました: ' + (err?.message || '不明'));
   });
 
   state.socket.on('toast', (data) => {
@@ -118,56 +143,43 @@ export function createSocket() {
   });
 
   state.socket.on('connect_error', async (err) => {
-    const msg = String((err && err.message) || '');
+    const msg = String(err?.message || '');
 
-    if (/TOKEN_EXPIRED/.test(msg)) {
+    if (/TOKEN_EXPIRED/i.test(msg) || /NO_TOKEN/i.test(msg)) {
       state.myToken = null;
       localStorage.removeItem('chatToken');
 
-      try {
-        await obtainToken();
-
-        if (state.socket) {
-          if (state.myToken) {
-            state.socket.auth = { token: state.myToken };
-          } else {
-            try { delete state.socket.auth; } catch (e) {}
-          }
-          try { state.socket.disconnect(); } catch (e) {}
-          try { state.socket.connect(); } catch (e) {}
-        } else {
-          createSocket();
-        }
-      } catch (e) {
-        location.reload();
-      }
+      await reconnectAfterAuthFailure();
       return;
     }
 
-    if (/NO_TOKEN/.test(msg) || /NO_TOKEN/.test(msg.toUpperCase())) {
-      state.myToken = null;
-      localStorage.removeItem('chatToken');
-      location.reload();
-      return;
-    }
-
-    location.reload();
+    setConnectionState('offline');
+    showToast('接続に失敗しました: ' + (err?.message || '不明'));
   });
 }
 
 export async function startConnection() {
   if (!state.myToken) {
     try {
-      await obtainToken();
+      await refreshTokenOnce();
     } catch (e) {
-      location.reload();
+      showToast('トークン取得に失敗しました');
       throw e;
     }
   }
 
-  if (!state.socket) createSocket();
-  else if (!state.socket.connected) {
-    if (state.myToken) state.socket.auth = { token: state.myToken || '' };
-    state.socket.connect();
+  if (!state.socket) {
+    createSocket();
+  }
+
+  applySocketAuth();
+
+  if (!state.socket.connected) {
+    setConnectionState('connecting');
+    try {
+      state.socket.connect();
+    } catch (e) {
+      showToast('接続開始に失敗しました');
+    }
   }
 }
