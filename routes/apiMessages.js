@@ -26,25 +26,60 @@ function isValidRoomId(roomId) {
   return typeof roomId === 'string' && ROOM_ID_PATTERN.test(roomId);
 }
 
-function sanitizeStoredMessage(record) {
-  if (!record || typeof record !== 'object') {
+function parseStoredMessage(raw) {
+  if (!raw || typeof raw !== 'object') {
     return null;
   }
 
-  const username = typeof record.username === 'string' ? record.username : '';
-  const message = typeof record.message === 'string' ? record.message : '';
-  const time = typeof record.time === 'string' ? record.time : '';
+  const username = typeof raw.username === 'string' ? raw.username : '';
+  const message = typeof raw.message === 'string' ? raw.message : '';
+  const time = raw.time;
 
-  if (!username || !message || !time) {
+  if (!username || !message || typeof time !== 'number' || !Number.isFinite(time)) {
     return null;
   }
 
-  const out = { username, message, time };
-  if (record.admin === true) {
+  return {
+    username,
+    message,
+    time,
+    admin: raw.admin === true,
+  };
+}
+
+function toPublicMessage(record) {
+  const parsed = parseStoredMessage(record);
+  if (!parsed) {
+    return null;
+  }
+
+  const out = {
+    username: parsed.username,
+    message: parsed.message,
+    time: formatJST(new Date(parsed.time)),
+  };
+
+  if (parsed.admin) {
     out.admin = true;
   }
 
   return out;
+}
+
+function readRoomId(req) {
+  return typeof req.params?.roomId === 'string'
+    ? req.params.roomId
+    : typeof req.body?.roomId === 'string'
+      ? req.body.roomId
+      : '';
+}
+
+function readMessage(req) {
+  return typeof req.body?.message === 'string' ? req.body.message : '';
+}
+
+function getMaxMessages(roomId) {
+  return roomId === 'general' ? GENERAL_ROOM_MAX_MESSAGES : DEFAULT_ROOM_MAX_MESSAGES;
 }
 
 function createApiMessagesRouter({ redisClient, io, emitUserToast }) {
@@ -54,7 +89,7 @@ function createApiMessagesRouter({ redisClient, io, emitUserToast }) {
 
   router.get('/messages/:roomId([a-zA-Z0-9_-]{1,32})', async (req, res) => {
     try {
-      const roomId = typeof req.params.roomId === 'string' ? req.params.roomId : '';
+      const roomId = readRoomId(req);
       if (!isValidRoomId(roomId)) {
         return res.sendStatus(400);
       }
@@ -64,11 +99,11 @@ function createApiMessagesRouter({ redisClient, io, emitUserToast }) {
         .map((entry) => {
           try {
             return JSON.parse(entry);
-          } catch (err) {
+          } catch {
             return null;
           }
         })
-        .map(sanitizeStoredMessage)
+        .map(toPublicMessage)
         .filter(Boolean);
 
       return res.json(messages);
@@ -80,8 +115,8 @@ function createApiMessagesRouter({ redisClient, io, emitUserToast }) {
 
   router.post('/messages', async (req, res) => {
     try {
-      const roomId = typeof req.body?.roomId === 'string' ? req.body.roomId : '';
-      const message = typeof req.body?.message === 'string' ? req.body.message : '';
+      const roomId = readRoomId(req);
+      const message = readMessage(req);
 
       if (!roomId || !message) {
         return res.sendStatus(400);
@@ -116,7 +151,6 @@ function createApiMessagesRouter({ redisClient, io, emitUserToast }) {
               : '送信が制限されています'
           );
         }
-
         return res.sendStatus(429);
       }
 
@@ -130,33 +164,33 @@ function createApiMessagesRouter({ redisClient, io, emitUserToast }) {
 
       if (token) {
         const adminOwnerClientId = await redisClient.get(KEYS.adminSession(token));
-        if (adminOwnerClientId && adminOwnerClientId === clientId) {
-          isAdmin = true;
-        }
+        isAdmin = adminOwnerClientId === clientId;
       }
 
+      const now = Date.now();
       const storedMessage = {
         username,
         message,
-        time: formatJST(new Date()),
+        time: now,
       };
 
       if (isAdmin) {
         storedMessage.admin = true;
       }
 
-      const maxMessages = roomId === 'general'
-        ? GENERAL_ROOM_MAX_MESSAGES
-        : DEFAULT_ROOM_MAX_MESSAGES;
-
       await pushAndTrimList(
         redisClient,
         KEYS.messages(roomId),
         JSON.stringify(storedMessage),
-        maxMessages
+        getMaxMessages(roomId)
       );
 
-      io.to(roomId).emit('newMessage', storedMessage);
+      io.to(roomId).emit('newMessage', {
+        username: storedMessage.username,
+        message: storedMessage.message,
+        time: formatJST(new Date(now)),
+        ...(storedMessage.admin ? { admin: true } : {}),
+      });
 
       return res.json({ ok: true });
     } catch (err) {
