@@ -71,7 +71,7 @@ npm start
 ```bash
 export REDIS_URL=redis://localhost:6379
 export FRONTEND_URL=http://localhost:3000
-export ADMIN_PASS=change-me
+export ADMIN_PASS=your-admin-password
 npm start
 ```
 
