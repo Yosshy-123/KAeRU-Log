@@ -94,7 +94,7 @@ cd KAeRU-Log
 npm install
 ```
 
-### 環境変数を設定して起動
+### 起動
 
 ```bash
 export REDIS_URL=redis://localhost:6379
