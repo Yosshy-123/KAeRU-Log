@@ -47,7 +47,7 @@ function securityHeaders(frontendUrl) {
         "base-uri 'self'",
         "object-src 'none'",
         "frame-ancestors 'self'",
-        `script-src 'self'`,
+        `script-src 'self' https://cdn.socket.io`,
         `style-src 'self' 'nonce-${nonce}'`,
         "img-src 'self' data: blob:",
         `connect-src ${connectSrc.join(' ')}`,
