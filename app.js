@@ -98,7 +98,13 @@ function createApp({ redisClient, io, adminPass, frontendUrl }) {
 
   app.use('/api/auth', createApiAuthRouter({ redisClient }));
   app.use('/api', createApiRouter({ redisClient, io, adminPass }));
+
   app.use(express.static(PUBLIC_DIR, { etag: true, maxAge: '1h' }));
+
+  app.get(/^\/(?!api\/).*/, (req, res) => {
+    res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
+  });
+
   app.use(createErrorHandler());
 
   return app;
