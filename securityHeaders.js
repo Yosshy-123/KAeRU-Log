@@ -49,12 +49,18 @@ function securityHeaders(frontendUrl) {
       connectSrc.push(frontendOrigin);
     }
 
+    const cdnOrigins = ['https://cdn.socket.io'];
+
+    const scriptSrcList = [`'self'`, `'nonce-${nonce}'`, ...cdnOrigins];
+    const scriptSrcElemList = [`'self'`, `'nonce-${nonce}'`, ...cdnOrigins];
+
     res.setHeader(
       'Content-Security-Policy',
       [
         `default-src 'self'`,
-        `script-src 'self'`,
-        `style-src 'self' 'nonce-${nonce}' 'https://cdn.socket.io'`,
+        `script-src ${scriptSrcList.join(' ')}`,
+        `script-src-elem ${scriptSrcElemList.join(' ')}`,
+        `style-src 'self' 'nonce-${nonce}'`,
         `img-src 'self' data: blob:`,
         `connect-src ${connectSrc.join(' ')}`,
         `frame-ancestors ${frameAncestors}`,
