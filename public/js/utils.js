@@ -55,7 +55,7 @@ export function formatMessageTime(isoString) {
     date.getFullYear(),
     pad2(date.getMonth() + 1),
     pad2(date.getDate()),
-  ].join('/') + ` ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+  ].join('/') + ' ' + pad2(date.getHours()) + ':' + pad2(date.getMinutes());
 }
 
 export function setConnectionState(stateName) {
