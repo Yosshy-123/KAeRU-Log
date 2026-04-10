@@ -3,18 +3,14 @@
 const crypto = require('crypto');
 
 function generateNonce() {
-  return crypto.randomBytes(16).toString('hex');
+  return crypto.randomBytes(16).toString('base64');
 }
 
 function normalizeFrontendOrigin(frontendUrl) {
-  if (typeof frontendUrl !== 'string') {
-    return null;
-  }
+  if (typeof frontendUrl !== 'string') return null;
 
   const trimmed = frontendUrl.trim();
-  if (!trimmed) {
-    return null;
-  }
+  if (!trimmed) return null;
 
   if (trimmed === "'self'" || trimmed === 'self') {
     return "'self'";
@@ -25,11 +21,15 @@ function normalizeFrontendOrigin(frontendUrl) {
     if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
       return parsed.origin;
     }
-  } catch (err) {
-    // ignore invalid origin
+  } catch {
+    // ignore
   }
 
   return null;
+}
+
+function isHttps(req) {
+  return req.secure || req.headers['x-forwarded-proto'] === 'https';
 }
 
 function securityHeaders(frontendUrl) {
@@ -37,9 +37,7 @@ function securityHeaders(frontendUrl) {
   const frameAncestors = frontendOrigin === "'self'" ? "'self'" : frontendOrigin;
 
   return (req, res, next) => {
-    if (res.headersSent) {
-      return next();
-    }
+    if (res.headersSent) return next();
 
     const nonce = generateNonce();
     res.locals.nonce = nonce;
@@ -49,38 +47,38 @@ function securityHeaders(frontendUrl) {
       connectSrc.push(frontendOrigin);
     }
 
-    const cdnOrigins = ['https://cdn.socket.io'];
+    const csp = [
+      `default-src 'self'`,
+      `script-src 'self' 'nonce-${nonce}' https://cdn.socket.io`,
+      `script-src-elem 'self' 'nonce-${nonce}' https://cdn.socket.io`,
+      `style-src 'self' 'nonce-${nonce}'`,
+      `img-src 'self' data: blob:`,
+      `connect-src ${connectSrc.join(' ')}`,
+      `frame-ancestors ${frameAncestors}`,
+      `base-uri 'self'`,
+      `form-action 'self'`,
+    ];
 
-    const scriptSrcList = [`'self'`, `'nonce-${nonce}'`, ...cdnOrigins];
-    const scriptSrcElemList = [`'self'`, `'nonce-${nonce}'`, ...cdnOrigins];
+    if (isHttps(req)) {
+      csp.push(`upgrade-insecure-requests`);
+    }
 
-    res.setHeader(
-      'Content-Security-Policy',
-      [
-        `default-src 'self'`,
-        `script-src ${scriptSrcList.join(' ')}`,
-        `script-src-elem ${scriptSrcElemList.join(' ')}`,
-        `style-src 'self' 'nonce-${nonce}'`,
-        `img-src 'self' data: blob:`,
-        `connect-src ${connectSrc.join(' ')}`,
-        `frame-ancestors ${frameAncestors}`,
-        `base-uri 'self'`,
-        `form-action 'self'`,
-        `upgrade-insecure-requests`,
-      ].join('; ')
-    );
+    res.setHeader('Content-Security-Policy', csp.join('; '));
 
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
-    res.setHeader('X-XSS-Protection', '1; mode=block');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.setHeader(
       'Permissions-Policy',
       'geolocation=(), microphone=(), camera=(), fullscreen=(self), payment=()'
     );
-    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
     res.setHeader('X-Permitted-Cross-Domain-Policies', 'none');
 
+    if (isHttps(req)) {
+      res.setHeader(
+        'Strict-Transport-Security',
+        'max-age=31536000; includeSubDomains; preload'
+      );
+    }
     next();
   };
 }
