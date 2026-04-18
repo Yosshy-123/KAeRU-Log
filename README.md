@@ -1,114 +1,136 @@
 # KAeRU Log
 
-Redis を使った軽量リアルタイムチャットです。Express と Socket.IO で HTTP API と WebSocket を提供し、認証トークン、ユーザー名、メッセージ履歴、管理セッションを Redis に保存します。
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/Yosshy-123/KAeRU-Log/blob/main/LICENSE)
+[![Node.js >=22](https://img.shields.io/badge/Node.js-%3E%3D22-brightgreen)](https://nodejs.org/)
+[![Redis](https://img.shields.io/badge/Redis-compatible-orange)](https://redis.io/)
 
-## 特徴
+洗練された軽量リアルタイムチャットサーバー。Redis をデータレイヤーに用い、Express と Socket.IO で API と WebSocket を提供する。トークンベース認証、メッセージ履歴の永続化、レート制御、管理 API を備え、単一コマンドで起動できるシンプルな構成で運用に適した設計を目指した。
 
-- ルーム単位のリアルタイム配信
-- 認証トークンによるセッション管理
-- メッセージ履歴の永続化と古いルームの自動掃除
-- ユーザー名変更と管理者機能
-- スパム対策、送信制限、同時接続制御
-- CSP、HSTS などのセキュリティヘッダー
+## ハイライト
 
-## 構成
+- ルーム単位リアルタイム配信と履歴保存
+- トークンベース認証での HTTP API と WebSocket 保護
+- Redis を利用したメッセージ永続化と定期クリーンアップ
+- レート制御とスパム判定による運用耐性
+- 管理 API による運用・メンテナンス機能
+- セキュリティヘッダーと CORS 制御による堅牢な HTTP レイヤー
+- 単一コマンドで起動、追加ビルド不要で導入が容易
 
-- `server.js`  起動処理、終了処理、Redis 接続、定期クリーンアップ
-- `app.js`  Express アプリ、API ルーティング、静的配信、セキュリティヘッダー
-- `socket.js`  Socket.IO の初期化、認証、ルーム参加、接続制御
-- `routes/`  認証、メッセージ、ユーザー名、管理 API
-- `services/`  スパム判定などのドメインロジック
-- `lib/`  Redis キー、メッセージ整形、共通ユーティリティ
-- `public/`  ブラウザ UI
-- `lua/`  Redis Lua スクリプト
+## 主要技術
 
-## 要件
+- Node.js 22 以上
+- Express
+- Socket.IO
+- @socket.io/redis-adapter
+- ioredis
+- cors, dotenv, validator
 
-- Node.js `>=22.0.0`
-- Redis 互換サーバー
-- モダンブラウザ
+## クイックスタート
 
-## 起動
+1. 依存をインストール
+   ```bash
+   npm install
+   ```
 
-```bash
-npm install
-export REDIS_URL=redis://localhost:6379
-export FRONTEND_URL=http://localhost:3000
-export ADMIN_PASS=change-me
-export TRUST_PROXY=false
-export PORT=3000
-npm start
-```
+2. 必要な環境変数を設定
+   ```bash
+   export REDIS_URL=redis://localhost:6379
+   export FRONTEND_URL=http://localhost:3000
+   export ADMIN_PASS=change-me
+   export PORT=3000
+   export TRUST_PROXY=false
+   ```
+
+3. サーバーを起動
+   ```bash
+   npm start
+   ```
+
+起動後は指定した FRONTEND_URL から WebSocket と API が利用可能になる
 
 ## 環境変数
 
-| 変数 | 必須 | 説明 |
-| --- | --- | --- |
-| `REDIS_URL` | はい | Redis 接続 URL |
-| `FRONTEND_URL` | はい | 許可するフロントエンドのオリジン |
-| `ADMIN_PASS` | はい | 管理者ログイン用パスワード |
-| `PORT` | いいえ | HTTP サーバーの待受ポート。既定は `3000` |
-| `TRUST_PROXY` | いいえ | `true` のときプロキシ越しの IP を参照 |
+- REDIS_URL — Redis 接続 URL
+- FRONTEND_URL — 許可するフロントエンドのオリジン
+- ADMIN_PASS — 管理者用パスワード
+- PORT — HTTP サーバーの待受ポート（既定 3000）
+- TRUST_PROXY — プロキシ下で IP を信頼する場合は true
 
-## API
+## HTTP API 概要
 
-すべての保護 API は `Authorization: Bearer <token>` を必要とします。トークンは `POST /api/auth` で取得します。
+認証済み API は Authorization: Bearer <token> を要求する。トークンは POST /api/auth で発行する。
 
-### 認証
+- POST /api/auth  
+  リクエスト例
+  ```json
+  { "username": "taro" }
+  ```
+  username を省略すると自動的に guest-xxxxxx 形式が割り当てられる。発行トークンには有効期限がある
 
-`POST /api/auth`
+- GET /api/messages/:roomId  
+  指定ルームのメッセージ履歴を取得する。roomId は 1〜32 文字で英数字と _ と - のみを受け付ける。タイムスタンプは ISO 8601 形式で返す
 
-リクエスト例:
+- POST /api/messages/:roomId  
+  リクエスト例
+  ```json
+  { "message": "こんにちは" }
+  ```
+  message は最大 300 文字。履歴保持は general ルームで最大 300 件、それ以外で最大 100 件に設定
 
-```json
-{
-  "username": "taro"
-}
-```
+- POST /api/username  
+  リクエスト例
+  ```json
+  { "username": "new-name" }
+  ```
+  username は 1〜20 文字。変更頻度はサーバー側で制限
 
-`username` を省略すると `guest-xxxxxx` 形式が割り当てられます。トークンの有効期限は 24 時間です。
+- 管理系 API
+  - POST /api/admin/login
+  - GET /api/admin/status
+  - POST /api/admin/logout
+  管理用のクリアやログイン／ログアウト用エンドポイントを備える
 
-### メッセージ取得
+## WebSocket 概要
 
-`GET /api/messages/:roomId`
+- Socket.IO を使いルーム単位のイベント配信とリアルタイム同期を実現する
+- WebSocket 接続には認証トークンを要求する
+- スケール時は Redis アダプターで複数ノード間のイベント同期を行う
 
-`roomId` は 1〜32 文字で、英数字、`_`、`-` のみ使用できます。レスポンスは時刻を ISO 8601 形式で返します。
+## データ設計と運用ルール
 
-### メッセージ送信
+- メッセージと履歴は JSON として Redis に保存
+- 古いルーム履歴は定期クリア処理で削除
+- IP ベースの接続制御とトークンレート制限、スパム判定は Redis のキーで管理
+- 履歴の永続化は運用方針に応じて寿命や取得数を調整すること
 
-`POST /api/messages/:roomId`
+## セキュリティと運用注意点
 
-```json
-{
-  "message": "こんにちは"
-}
-```
+- セキュリティヘッダーを適用しているためヘッダー設定を適切に運用すること
+- CORS は FRONTEND_URL を基に制限しているためフロントエンド設定を正しく行うこと
+- ADMIN_PASS は安全な値に設定して監査ログを残すこと
+- Redis は適切な認証とネットワーク制御で保護すること
 
-`message` は最大 300 文字です。`general` は最大 300 件、それ以外のルームは最大 100 件まで履歴を保持します。
+## プロジェクト構成
 
-### ユーザー名変更
+- `server.js` — エントリポイント、プロセスと Redis の管理、定期処理
+- `app.js` — Express アプリ、ルーティング、静的配信、セキュリティヘッダー
+- `socket.js` — Socket.IO の初期化、認証、ルーム管理
+- `auth.js` — 認証ロジック
+- `redis.js` — Redis 接続とユーティリティ
+- `securityHeaders.js` — セキュリティヘッダー設定
+- `routes/` — API ルート一式
+- `services/` — スパム判定やビジネスロジック
+- `lib/` — 汎用ユーティリティと Redis キー定義
+- `public/` — 静的 UI
+- `lua/` — Redis Lua スクリプト
+- `utils/` — 補助ユーティリティ
 
-`POST /api/username`
+## トラブルシューティング
 
-```json
-{
-  "username": "new-name"
-}
-```
+- 接続できない場合は REDIS_URL とネットワーク、FRONTEND_URL を確認すること
+- 認証に失敗する場合はトークン発行と期限設定、ADMIN_PASS を確認すること
+- 予期しないメモリ増大がある場合は Redis キーのパターンや履歴保持数を見直すこと
 
-`username` は 1〜20 文字です。変更は 30 秒ごとに 1 回までに制限されます。
+## ライセンス
 
-### 管理機能
-
-`POST /api/admin/login` で管理者認証を行います。`GET /api/admin/status` で権限確認、`POST /api/admin/logout` で管理者セッションを終了します。`POST /api/admin/clear/:roomId` は指定ルームのメッセージを削除します。
-
-## 実装メモ
-
-- メッセージ本文と履歴は JSON として Redis に保存されます。
-- ルームの古い履歴は定期処理で削除されます。
-- IP ベースの制御とトークンレート制限は Redis キーで管理されます。
-- WebSocket 接続は認証トークンが必要です。
-
-## 開発
-
-このリポジトリは単一コマンドで起動できるように構成されています。追加のビルドステップはありません。
+MIT
