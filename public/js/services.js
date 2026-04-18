@@ -102,10 +102,6 @@ export async function sendMessage(overridePayload = null) {
       const msg = await readErrorMessage(res, '送信に失敗しました');
       showToast(msg);
 
-      if (res.status === 429) {
-        showToast('送信制限中です。しばらくお待ちください');
-      }
-
       textarea.value = payload.message;
       return;
     }
