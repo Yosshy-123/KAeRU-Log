@@ -1,137 +1,160 @@
 # KAeRU Log
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/Yosshy-123/KAeRU-Log/blob/main/LICENSE)
-[![Node.js >=22](https://img.shields.io/badge/Node.js-%3E%3D22-brightgreen)](https://nodejs.org/)
-[![Redis](https://img.shields.io/badge/Redis-compatible-orange)](https://redis.io/)
+Redis をデータ層に使う、Express + Socket.IO ベースのリアルタイムチャットサーバーです。HTTP API と WebSocket はどちらも認証付きで動作し、メッセージ履歴、ユーザー名、トークン、管理者セッション、レート制限状態を Redis に保存します。
 
-洗練された軽量リアルタイムチャットサーバー。Redis をデータレイヤーに用い、Express と Socket.IO で API と WebSocket を提供する。トークンベース認証、メッセージ履歴の永続化、レート制御、管理 API を備え、単一コマンドで起動できるシンプルな構成で運用に適した設計を目指した。
+## 主な機能
 
-## ハイライト
+- Socket.IO によるルーム単位のリアルタイム配信
+- HTTP API と WebSocket のトークン認証
+- Redis へのメッセージ履歴保存
+- ルームごとのメッセージ上限管理
+- ユーザー名変更のレート制限
+- 管理者ログイン、ルームクリア、状態確認
+- スパム判定と送信制限
+- セキュリティヘッダーと CORS 制御
+- 静的フロントエンドの配信
 
-- ルーム単位リアルタイム配信と履歴保存
-- トークンベース認証での HTTP API と WebSocket 保護
-- Redis を利用したメッセージ永続化と定期クリーンアップ
-- レート制御とスパム判定による運用耐性
-- 管理 API による運用・メンテナンス機能
-- セキュリティヘッダーと CORS 制御による堅牢な HTTP レイヤー
-- 単一コマンドで起動、追加ビルド不要で導入が容易
+## 要件
 
-## 主要技術
+- Node.js 22 以上
+- Redis に接続できること
 
-- `Node.js >=22`
-- `Express`
-- `Socket.IO`
-- `@socket.io/redis-adapter`
-- `ioredis`
-- `cors`
-- `dotenv`
-- `validator`
+## セットアップ
 
-## クイックスタート
+```bash
+npm install
+```
 
-1. 依存をインストール
-   ```bash
-   npm install
-   ```
+### 環境変数
 
-2. 必要な環境変数を設定
-   ```bash
-   export REDIS_URL=redis://localhost:6379
-   export FRONTEND_URL=http://localhost:3000
-   export ADMIN_PASS=change-me
-   export PORT=3000
-   export TRUST_PROXY=false
-   ```
+起動前に以下を設定します。
 
-3. サーバーを起動
-   ```bash
-   npm start
-   ```
+```bash
+export REDIS_URL=redis://localhost:6379
+export FRONTEND_URL=http://localhost:3000
+export ADMIN_PASS=change-me
+export PORT=3000
+export TRUST_PROXY=false
+```
 
-起動後は指定した `FRONTEND_URL` から WebSocket と API が利用可能になる
+- `REDIS_URL`: Redis 接続 URL
+- `FRONTEND_URL`: 許可するフロントエンドのオリジン
+- `ADMIN_PASS`: 管理者ログイン用パスワード
+- `PORT`: HTTP サーバーの待受ポート。既定は `3000`
+- `TRUST_PROXY`: プロキシ配下で `req.ip` を信頼する場合は `true`
 
-## 環境変数
+### 起動
 
-- `REDIS_URL` — Redis 接続 URL
-- `FRONTEND_URL` — 許可するフロントエンドのオリジン
-- `ADMIN_PASS` — 管理者用パスワード
-- `PORT` — HTTP サーバーの待受ポート（既定 3000）
-- `TRUST_PROXY` — プロキシ下で IP を信頼する場合は true
+```bash
+npm start
+```
 
-## HTTP API 概要
+## データと制約
 
-認証済み API は `Authorization: Bearer <token>` を要求する。トークンは `POST /api/auth` で発行する。
+- 認証トークンの有効期間は 24 時間です。
+- 認証時にユーザー名を省略すると `guest-xxxxxx` 形式が割り当てられます。
+- ユーザー名は 1〜20 文字です。
+- メッセージは 1〜300 文字です。
+- ルーム ID は 1〜32 文字で、英数字・`_`・`-` のみ使用できます。
+- メッセージ履歴は `general` ルームで最大 300 件、それ以外のルームで最大 100 件です。
+- `general` 以外のルームは、最終更新から 30 日を超えると定期クリーンアップの対象になります。
+- WebSocket 接続は 1 クライアント ID につき 1 接続に制限されます。
 
-- `POST /api/auth`
-  リクエスト例
-  ```json
-  { "username": "taro" }
-  ```
-  username を省略すると自動的に guest-xxxxxx 形式が割り当てられる。発行トークンには有効期限がある
+## HTTP API
 
-- `GET /api/messages/:roomId`  
-  指定ルームのメッセージ履歴を取得する。roomId は 1〜32 文字で英数字と `_` と `-` のみを受け付ける。タイムスタンプは ISO 8601 形式で返す
+認証が必要な API は `Authorization: Bearer <token>` を要求します。`token` は `POST /api/auth` で発行します。
 
-- `POST /api/messages/:roomId`  
-  リクエスト例
-  ```json
-  { "message": "こんにちは" }
-  ```
-  message は最大 300 文字。履歴保持は general ルームで最大 300 件、それ以外で最大 100 件に設定
+### `POST /api/auth`
 
-- `POST /api/username`  
-  リクエスト例
-  ```json
-  { "username": "new-name" }
-  ```
-  username は 1〜20 文字。変更頻度はサーバー側で制限
+認証トークンを発行します。
 
-- 管理系 API
-  - `POST /api/admin/login`
-  - `GET /api/admin/status`
-  - `POST /api/admin/logout`
-  管理用のクリアやログイン／ログアウト用エンドポイントを備える
+リクエスト例:
 
-## WebSocket 概要
+```json
+{ "username": "taro" }
+```
 
-- Socket.IO を使いルーム単位のイベント配信とリアルタイム同期を実現する
-- WebSocket 接続には認証トークンを要求する
-- スケール時は Redis アダプターで複数ノード間のイベント同期を行う
+`username` を省略すると、自動生成された guest 名が使われます。  
+レスポンス例:
 
-## データ設計と運用ルール
+```json
+{ "token": "…", "username": "taro" }
+```
 
-- メッセージと履歴は JSON として Redis に保存
-- 古いルーム履歴は定期クリア処理で削除
-- IP ベースのトークンレート制限、スパム判定は Redis のキーで管理
-- 履歴の永続化は運用方針に応じて寿命や取得数を調整すること
+### `GET /api/messages/:roomId`
 
-## セキュリティと運用注意点
+指定ルームのメッセージ履歴を返します。
 
-- セキュリティヘッダーを適用しているためヘッダー設定を適切に運用すること
-- CORS は `FRONTEND_URL` を基に制限しているためフロントエンド設定を正しく行うこと
-- `ADMIN_PASS` は安全な値に設定して監査ログを残すこと
-- Redis は適切な認証とネットワーク制御で保護すること
+### `POST /api/messages/:roomId`
+
+メッセージを保存して、そのルームに `newMessage` を配信します。
+
+リクエスト例:
+
+```json
+{ "message": "こんにちは" }
+```
+
+### `POST /api/username`
+
+現在のユーザー名を更新します。  
+同一クライアントには 30 秒の変更間隔制限があります。
+
+リクエスト例:
+
+```json
+{ "username": "new-name" }
+```
+
+### 管理 API
+
+- `POST /api/admin/login`
+- `GET /api/admin/status`
+- `POST /api/admin/logout`
+- `POST /api/admin/clear/:roomId`
+
+`/login` は認証済みトークンと `ADMIN_PASS` を使って管理者セッションを作成します。  
+`/status` は現在のトークンが管理者セッションかどうかを返します。  
+`/logout` は管理者セッションを削除します。  
+`/clear/:roomId` は指定ルームのメッセージ履歴を削除し、`clearMessages` を配信します。
+
+## WebSocket
+
+### 接続認証
+
+接続時に `handshake.auth.token` で認証トークンを渡します。  
+トークンがない、または無効な場合は接続できません。
+
+### イベント
+
+- `joinRoom` — `{ roomId }` を送るとルームに参加します
+- `joinedRoom` — ルーム参加成功時に返ります
+- `newMessage` — 新規メッセージ配信
+- `clearMessages` — ルーム履歴の削除通知
+- `roomUserCount` — ルームの接続人数通知
+- `toast` — ユーザーまたはルーム向け通知
+- `authRequired` — 認証が必要な操作で返ります
+
+## 実装メモ
+
+- Redis はメッセージ履歴、トークン、ユーザー名、管理者セッション、レート制限、スパム判定に使われます。
+- `@socket.io/redis-adapter` を使って複数ノード間のイベントを同期できます。
+- `public/` に静的 UI が含まれています。
+- `server.js` が起動処理、Redis 接続、クリーンアップスケジュール、シグナル終了処理を担当します。
 
 ## プロジェクト構成
 
-- `server.js` — エントリポイント、プロセスと Redis の管理、定期処理
-- `app.js` — Express アプリ、ルーティング、静的配信、セキュリティヘッダー
-- `socket.js` — Socket.IO の初期化、認証、ルーム管理
-- `auth.js` — 認証ロジック
-- `redis.js` — Redis 接続とユーティリティ
-- `securityHeaders.js` — セキュリティヘッダー設定
-- `routes/` — API ルート一式
-- `services/` — スパム判定やビジネスロジック
-- `lib/` — 汎用ユーティリティと Redis キー定義
-- `public/` — 静的 UI
-- `lua/` — Redis Lua スクリプト
+- `server.js` — エントリポイント
+- `app.js` — Express アプリの構築
+- `socket.js` — Socket.IO サーバー
+- `auth.js` — トークン生成と検証
+- `redis.js` — Redis 接続
+- `routes/` — HTTP API
+- `services/` — スパム判定などのサービス
+- `lib/` — Redis キー、メッセージ処理、バリデーション
 - `utils/` — 補助ユーティリティ
-
-## トラブルシューティング
-
-- 接続できない場合は `REDIS_URL` とネットワーク、`FRONTEND_URL` を確認すること
-- 認証に失敗する場合はトークン発行と期限設定、`ADMIN_PASS` を確認すること
-- 予期しないメモリ増大がある場合は Redis キーのパターンや履歴保持数を見直すこと
+- `public/` — 静的ファイル
+- `lua/` — Redis Lua スクリプト
 
 ## ライセンス
 
