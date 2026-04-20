@@ -71,7 +71,7 @@ function createApiMessagesRouter({ redisClient, io, emitUserToast }) {
           notifyUser(
             clientId,
             spamResult.muteSec
-              ? `スパムを検知したため${spamResult.muteSec}秒間ミュートされました`
+              ? `スパムを検知したため${spamResult.muteSec}秒間ミュートされています`
               : '送信が制限されています'
           );
         }
@@ -80,7 +80,7 @@ function createApiMessagesRouter({ redisClient, io, emitUserToast }) {
       }
 
       if (spamResult.muted) {
-        notifyUser(clientId, `スパムを検知したため${spamResult.muteSec}秒間ミュートされました`);
+        notifyUser(clientId, `スパムを検知したため${spamResult.muteSec}秒間ミュートされています`);
         return res.sendStatus(429);
       }
 
