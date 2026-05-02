@@ -84,18 +84,22 @@ try {
   process.exit(1);
 }
 
-const app = createApp({
-  redisClient,
-  adminPass: ADMIN_PASS,
-  frontendUrl: FRONTEND_URL,
-});
+const httpServer = http.createServer();
 
-const httpServer = http.createServer(app);
 const io = createSocketServer({
   httpServer,
   redisClient,
   frontendUrl: FRONTEND_URL,
 });
+
+const app = createApp({
+  redisClient,
+  io,
+  adminPass: ADMIN_PASS,
+  frontendUrl: FRONTEND_URL,
+});
+
+httpServer.on('request', app);
 
 let cleanupInterval = null;
 try {

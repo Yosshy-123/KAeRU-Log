@@ -57,10 +57,14 @@ function createToastEmitters(io) {
       return;
     }
 
-    io.to(KEYS.userRoom(clientId)).emit('toast', {
-      scope: 'user',
-      message: message.trim(),
-    });
+    try {
+      io.to(KEYS.userRoom(clientId)).emit('toast', {
+        scope: 'user',
+        message: message.trim(),
+      });
+    } catch (err) {
+      console.error('Failed to emit user toast', err);
+    }
   };
 
   const emitRoomToast = (roomId, message) => {
@@ -68,10 +72,14 @@ function createToastEmitters(io) {
       return;
     }
 
-    io.to(roomId).emit('toast', {
-      scope: 'room',
-      message: message.trim(),
-    });
+    try {
+      io.to(roomId).emit('toast', {
+        scope: 'room',
+        message: message.trim(),
+      });
+    } catch (err) {
+      console.error('Failed to emit room toast', err);
+    }
   };
 
   return { emitUserToast, emitRoomToast };
@@ -130,6 +138,11 @@ function createErrorHandler() {
 }
 
 function createApp({ redisClient, io, adminPass, frontendUrl }) {
+  if (!redisClient) throw new Error('redisClient is required');
+  if (!io) throw new Error('io is required');
+  if (!adminPass) throw new Error('adminPass is required');
+  if (!frontendUrl) throw new Error('frontendUrl is required');
+
   const app = express();
   const trustProxy = isTrustProxyEnabled(process.env.TRUST_PROXY);
 
