@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { sha256Hex, shortSha256Hex } = require('../lib/hash');
+const createRedisLuaScript = require('../lib/redisLuaScript');
 
 const DEFAULTS = {
   baseMuteSec: 60,
@@ -18,6 +19,7 @@ const DEFAULTS = {
 
 const IP_RATE_MULTIPLIER_DEFAULT = 1.8;
 const LUA_PATH = path.join(__dirname, '..', 'lua', 'spamService.lua');
+const LUA_SOURCE = fs.readFileSync(LUA_PATH, 'utf8');
 const SCOPE_CLIENT = 'client';
 const SCOPE_IP = 'ip';
 const NORMALIZE_WHITESPACE_RE = /[-\u001F\u007F\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000]/g;
@@ -36,18 +38,7 @@ function normalizeMessage(msg) {
 }
 
 function validKey(key) {
-  return typeof key === 'string' && key.length > 0;
-}
-
-function loadSpamLua(redis) {
-  try {
-    const luaScript = fs.readFileSync(LUA_PATH, 'utf8');
-    if (typeof redis.defineCommand === 'function' && typeof redis.spamCheckLua !== 'function') {
-      redis.defineCommand('spamCheckLua', { numberOfKeys: 8, lua: luaScript });
-    }
-  } catch (err) {
-    console.error('spamServiceLuaLoadFailed', String(err));
-  }
+  return typeof key === 'string' && key.trim() !== '';
 }
 
 function createBaseConfig(config = {}) {
@@ -150,47 +141,47 @@ function combineResults(results) {
 }
 
 module.exports = function createSpamService(redis, KEYS, config = {}) {
+  if (!redis) {
+    throw new Error('redis is required');
+  }
+  if (!KEYS) {
+    throw new Error('KEYS is required');
+  }
+
   const baseConfig = createBaseConfig(config);
   const ipMultiplier = normalizeNumber(config.ipRateMultiplier, IP_RATE_MULTIPLIER_DEFAULT);
   const ipConfig = { ...baseConfig, ...deriveScopeConfig(baseConfig, ipMultiplier) };
   const scopeProfiles = createScopeProfiles(baseConfig, ipConfig, KEYS);
-
-  loadSpamLua(redis);
-
-  async function jsFallbackCheck(scope, profile) {
-    try {
-      const last = await redis.get(scope.lastKey);
-      const now = Date.now();
-
-      if (last && now - Number(last) < profile.config.messageRateLimitMs) {
-        return createScopeResult({ rejected: true, reason: 'rate-limit', scope: scope.keyLabel });
-      }
-
-      await redis.set(scope.lastKey, String(now), 'EX', profile.config.intervalWindowSec);
-      return createScopeResult({ scope: scope.keyLabel });
-    } catch {
-      return createScopeResult({ muted: true, rejected: true, reason: 'error', scope: scope.keyLabel });
-    }
-  }
+  const spamScript = createRedisLuaScript(redis, LUA_SOURCE);
 
   async function checkScope(scopeType, scopeId, message) {
     const profile = scopeProfiles[scopeType] || scopeProfiles[SCOPE_CLIENT];
     const scope = buildScope(profile, scopeId);
     if (!scope) {
-      return createScopeResult({ scope: scopeType });
+      return createScopeResult({ muted: true, rejected: true, reason: 'error', scope: scopeType });
     }
 
     const normalized = normalizeMessage(message);
     const msgHash = normalized ? sha256Hex(normalized) : '';
 
-    const luaAvailable = typeof redis.spamCheckLua === 'function';
-    const msgKeysValid = validKey(scope.lastMsgHashKey) && validKey(scope.repeatMsgKey) && validKey(scope.shortRateKey);
-    if (!luaAvailable || !msgKeysValid) {
-      return jsFallbackCheck(scope, profile);
+    const keysValid = [
+      scope.lastKey,
+      scope.prevDeltaKey,
+      scope.repeatKey,
+      scope.muteKey,
+      scope.muteLevelKey,
+      scope.lastMsgHashKey,
+      scope.repeatMsgKey,
+      scope.shortRateKey,
+    ].every(validKey);
+
+    if (!keysValid) {
+      return createScopeResult({ muted: true, rejected: true, reason: 'error', scope: scope.keyLabel });
     }
 
     try {
-      const res = await redis.spamCheckLua(
+      const res = await spamScript.eval(
+        8,
         scope.lastKey,
         scope.prevDeltaKey,
         scope.repeatKey,
@@ -213,8 +204,7 @@ module.exports = function createSpamService(redis, KEYS, config = {}) {
       );
 
       if (!Array.isArray(res) || res.length < 4) {
-        console.error('spamLuaBadResponse', res);
-        return jsFallbackCheck(scope, profile);
+        throw new Error(`Invalid spam Lua response: ${JSON.stringify(res)}`);
       }
 
       return createScopeResult({
@@ -225,7 +215,7 @@ module.exports = function createSpamService(redis, KEYS, config = {}) {
         scope: scope.keyLabel,
       });
     } catch (err) {
-      console.error('spamLuaError', String(err));
+      console.error('spamLuaError', err);
       return createScopeResult({ muted: true, rejected: true, reason: 'error', scope: scope.keyLabel });
     }
   }

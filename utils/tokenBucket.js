@@ -36,13 +36,7 @@ module.exports = function createTokenBucket(redisClient) {
     const nowMs = Date.now();
 
     try {
-      const res = await script.eval(
-        1,
-        key,
-        String(capacity),
-        String(refillPerMs),
-        String(nowMs)
-      );
+      const res = await script.eval(1, key, String(capacity), String(refillPerMs), String(nowMs));
       const allowed = Array.isArray(res) && Number(res[0]) === 1;
       const tokens = Array.isArray(res) ? Number(res[1]) : 0;
 
@@ -52,9 +46,9 @@ module.exports = function createTokenBucket(redisClient) {
       };
     } catch (err) {
       console.error('[tokenBucket] eval error', err);
-      return { allowed: false, tokens: 0, error: err };
+      return { allowed: false, tokens: 0 };
     }
   }
 
-  return { allow, loadScript: script.load };
+  return { allow };
 };
