@@ -11,7 +11,8 @@ const createApiUsernameRouter = require('./routes/apiUsername');
 const createApiAdminRouter = require('./routes/apiAdmin');
 const KEYS = require('./lib/redisKeys');
 const { validateAuthToken } = require('./auth');
-const { getAuthTokenFromRequest, sendAuthError } = require('./lib/requestAuth');
+const { getAuthTokenFromRequest } = require('./authCookie');
+const { sendAuthError } = require('./lib/requestAuth');
 const { isTrustProxyEnabled } = require('./utils/trustProxy');
 const { createToastEmitters } = require('./lib/toast');
 
