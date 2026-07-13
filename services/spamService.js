@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { sha256Hex } = require('../lib/hash');
 const { hashIp } = require('../lib/ip');
+const { isValidKey } = require('../lib/redisKeys');
 const createRedisLuaScript = require('../lib/redisLuaScript');
 
 const DEFAULTS = {
@@ -37,7 +38,6 @@ function normalizeMessage(msg) {
   const source = msg.normalize ? msg.normalize('NFKC') : String(msg);
   return source.replace(NORMALIZE_WHITESPACE_RE, ' ').replace(/\s+/g, ' ').trim();
 }
-
 
 function createBaseConfig(config = {}) {
   return {
@@ -171,7 +171,7 @@ module.exports = function createSpamService(redis, KEYS, config = {}) {
       scope.lastMsgHashKey,
       scope.repeatMsgKey,
       scope.shortRateKey,
-    ].every(validKey);
+    ].every(isValidKey);
 
     if (!keysValid) {
       return createScopeResult({ muted: true, rejected: true, reason: 'error', scope: scope.keyLabel });
