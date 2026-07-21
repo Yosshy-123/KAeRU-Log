@@ -1,5 +1,6 @@
 import { showToast } from './toast.js';
 import { state } from './state.js';
+import { disconnectSocketGracefully } from './socket.js';
 import { ROOM_ID_MAX_LENGTH, isValidRoomId } from './validation.js';
 
 export function changeChatRoom(newRoom) {
@@ -12,5 +13,14 @@ export function changeChatRoom(newRoom) {
     return;
   }
 
-  location.href = `/room/${encodeURIComponent(newRoom)}`;
+  const nextUrl = `/room/${encodeURIComponent(newRoom)}`;
+
+  if (state.socket) {
+    void disconnectSocketGracefully().finally(() => {
+      location.href = nextUrl;
+    });
+    return;
+  }
+
+  location.href = nextUrl;
 }

@@ -33,6 +33,39 @@ function createSocketError(code) {
   return err;
 }
 
+function createReleaseSession({ store, clientId, socketId }) {
+  let released = false;
+
+  return async () => {
+    if (released) {
+      return;
+    }
+
+    released = true;
+
+    try {
+      await store.release(clientId, socketId);
+    } catch (err) {
+      console.error('Failed to release client session slot', err);
+    }
+  };
+}
+
+function createDisconnectCleanup({ releaseSession, afterDisconnect = async () => {} }) {
+  let done = false;
+
+  return async () => {
+    if (done) {
+      return;
+    }
+
+    done = true;
+
+    await releaseSession();
+    await afterDisconnect();
+  };
+}
+
 function createSocketServer({ httpServer, redisClient }) {
   if (!httpServer) {
     throw new Error('httpServer is required');
@@ -65,41 +98,32 @@ function createSocketServer({ httpServer, redisClient }) {
     socket.data.cleanup = async () => {};
 
     const token = getAuthTokenFromRequest(socket.handshake);
-
     if (!token) {
       return next(createSocketError('NO_TOKEN'));
     }
 
+    let clientId = null;
+    let connectionId = null;
+
     try {
-      const clientId = await validateAuthToken(redisClient, token);
+      clientId = await validateAuthToken(redisClient, token);
       if (!clientId) {
         return next(createSocketError('TOKEN_EXPIRED'));
       }
 
-      const connectionId = socket.id || crypto.randomUUID();
-      socket.data.connectionId = connectionId;
+      connectionId = socket.id || crypto.randomUUID();
       socket.data.clientId = clientId;
+      socket.data.connectionId = connectionId;
 
-      const session = await socketSessionManager.acquire(clientId, connectionId);
-      if (!session.acquired) {
+      const session = await socketSessionManager.open(clientId, connectionId);
+      if (!session.granted) {
         return next(createSocketError('CLIENT_SESSION_LIMIT'));
       }
 
-      let cleanedUp = false;
-      const releaseClientSession = async () => {
-        if (cleanedUp) {
-          return;
-        }
-
-        cleanedUp = true;
-        await clientSessionStore.release(clientId, connectionId).catch((err) => {
-          console.error('Failed to release client session slot', err);
-        });
-      };
-
-      socket.data.cleanup = releaseClientSession;
-      socket.once('disconnect', () => {
-        void socket.data.cleanup?.();
+      socket.data.cleanup = createReleaseSession({
+        store: clientSessionStore,
+        clientId,
+        socketId: connectionId,
       });
 
       socket.data.authenticated = true;
@@ -107,6 +131,12 @@ function createSocketServer({ httpServer, redisClient }) {
 
       return next();
     } catch (err) {
+      if (clientId && connectionId) {
+        await clientSessionStore.release(clientId, connectionId).catch((releaseErr) => {
+          console.error('Failed to release session after auth error', releaseErr);
+        });
+      }
+
       console.error('Authentication error in socket middleware', err);
       return next(createSocketError('AUTHENTICATION_ERROR'));
     }
@@ -133,10 +163,9 @@ function createSocketServer({ httpServer, redisClient }) {
     };
 
     const previousCleanup = typeof socket.data?.cleanup === 'function' ? socket.data.cleanup : async () => {};
-    socket.data.cleanup = async () => {
-      try {
-        await previousCleanup();
-      } finally {
+    socket.data.cleanup = createDisconnectCleanup({
+      releaseSession: previousCleanup,
+      afterDisconnect: async () => {
         const roomId = socket.data?.roomId;
         socket.data.roomId = null;
 
@@ -149,8 +178,12 @@ function createSocketServer({ httpServer, redisClient }) {
         } catch (err) {
           console.error('Error in disconnect cleanup', err);
         }
-      }
-    };
+      },
+    });
+
+    socket.once('disconnect', () => {
+      void socket.data.cleanup?.();
+    });
 
     socket.on(
       'joinRoom',

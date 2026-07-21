@@ -25,6 +25,54 @@ async function refreshTokenOnce() {
   }
 }
 
+let disconnectInFlight = null;
+
+export function disconnectSocketGracefully(timeoutMs = 150) {
+  const socket = state.socket;
+  if (!socket || typeof socket.disconnect !== 'function') {
+    return Promise.resolve();
+  }
+
+  if (socket.disconnected === true && socket.connected !== true) {
+    return Promise.resolve();
+  }
+
+  if (disconnectInFlight) {
+    return disconnectInFlight;
+  }
+
+  disconnectInFlight = new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve();
+    };
+
+    try {
+      socket.once('disconnect', finish);
+    } catch {
+      // ignore and rely on the timeout fallback below
+    }
+
+    try {
+      socket.disconnect();
+    } catch (err) {
+      console.warn('disconnectSocketGracefully failed', err);
+      finish();
+      return;
+    }
+
+    window.setTimeout(finish, timeoutMs);
+  }).finally(() => {
+    disconnectInFlight = null;
+  });
+
+  return disconnectInFlight;
+}
+
 async function reconnectAfterAuthFailure() {
   if (authRetryInFlight) return;
   authRetryInFlight = true;

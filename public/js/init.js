@@ -21,7 +21,7 @@ import {
   loadHistory,
 } from './services.js';
 
-import { startConnection } from './socket.js';
+import { startConnection, disconnectSocketGracefully } from './socket.js';
 import { obtainToken } from './api.js';
 import { showToast } from './toast.js';
 
@@ -38,6 +38,23 @@ export function setupRoomInput() {
       changeChatRoom(elements.roomIdInput.value.trim());
     }
   });
+}
+
+let navigationCleanupRegistered = false;
+
+function registerNavigationCleanup() {
+  if (navigationCleanupRegistered) {
+    return;
+  }
+
+  navigationCleanupRegistered = true;
+
+  const handlePageExit = () => {
+    void disconnectSocketGracefully();
+  };
+
+  window.addEventListener('pagehide', handlePageExit, { capture: true });
+  window.addEventListener('beforeunload', handlePageExit, { capture: true });
 }
 
 export function setupEventListeners() {
@@ -111,6 +128,7 @@ export async function initialize() {
 
     try {
       await startConnection();
+      registerNavigationCleanup();
     } catch (err) {
       console.warn('startConnection failed', err);
     }
