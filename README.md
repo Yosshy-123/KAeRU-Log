@@ -1,3 +1,5 @@
+
+
 # KAeRU Log
 
 Redis をデータ層に使う、Express + Socket.IO ベースのリアルタイムチャットサーバーです。HTTP API と WebSocket は同じセッションを使って認証され、メッセージ履歴、ユーザー名、トークン、管理者セッション、レート制限状態、Socket の接続所有権を Redis に保存します。
@@ -44,6 +46,7 @@ export HTTPS=false
 - `PORT`: HTTP サーバーの待受ポート。既定は `3000`
 - `TRUST_PROXY`: プロキシ配下で `req.ip` を信頼する場合は `true`
 - `HTTPS`: Cookie の `Secure` 属性と HSTS を有効化する場合は `true`
+- `.env` ファイル: 環境変数を `dotenv` 経由で `.env` ファイルに定義できます。
 
 ## 起動
 
