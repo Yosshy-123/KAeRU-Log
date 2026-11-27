@@ -84,6 +84,9 @@ function createSocketServer({ httpServer, redisClient }) {
 
   const io = new SocketIOServer(httpServer, {
     adapter: createAdapter(pubClient, subClient),
+    cors: {
+      origin: false,
+    },
   });
 
   io.closeRedisConnections = async () => {
