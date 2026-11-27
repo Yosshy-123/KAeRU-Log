@@ -86,7 +86,6 @@ function createSocketServer({ httpServer, redisClient }) {
     adapter: createAdapter(pubClient, subClient),
     cors: {
       origin: false,
-      credentials: true,
     },
   });
 
