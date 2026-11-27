@@ -122,7 +122,6 @@ export function createSocket() {
   state.socket = io(SERVER_URL, {
     transports: ['websocket'],
     autoConnect: false,
-    withCredentials: true,
   });
 
   state.socket.on('connect', () => {
